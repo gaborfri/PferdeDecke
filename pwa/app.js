@@ -328,7 +328,7 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
         <div><strong>${label}</strong></div>
         <div class="muted">🌡️ Gefühlt ${fmt(f.temp + state.sensitivity, "°C")} • Luft ${fmt(f.tAir ?? f.temp, "°C")}</div>
         <div class="muted">🌬️ Wind ${fmt(f.wind, " m/s")} ${dir} • Böen ${fmt(f.gust ?? f.wind, " m/s")}</div>
-        <div class="muted">💧 Regenrisiko ${fmt((f.pprob||0)*100, "%")} • Regenstunden ~ ${fmt(rainHours, "h")} • Regenmenge ~ ${Math.round(rainSum*10)/10} mm</div>
+        <div class="muted">💧 ${fmt((f.pprob||0)*100, "%")} • ⌛ ~ ${fmt(rainHours, "h")} • ☔ ${Math.round(rainSum*10)/10} mm</div>
         <div class="muted">Luftfeuchte ${fmt((f.rh||0)*100, "%")}, UV max ${uvMax}</div>
         <div class="sparkline" role="img" aria-label="Tagesverlauf" data-temps-app='${JSON.stringify(spark.tempsApp)}' data-temps-air='${JSON.stringify(spark.tempsAir)}' data-probs='${JSON.stringify(spark.probs)}' data-hours='${JSON.stringify(spark.hours)}'>${spark.svg}</div>
       </div>

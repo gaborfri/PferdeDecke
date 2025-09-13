@@ -290,12 +290,18 @@ function refreshDerived(){
   // Render tomorrow
   $("#tomorrow").classList.remove("hidden");
   $("#tomorrow-forecast").innerHTML = forecastDetailsHTML(state.lastData, state.ctx.idxTomorrow, fTomorrow, 1);
-  $("#tomorrow-reco").innerHTML = `<strong>Empfehlung: ${selTomorrow.name}</strong>`;
+  state.recoTomorrowId = selTomorrow.id;
+  const baseTomorrow = state.timeMode === 'night' ? 'Morgen Nacht' : 'Morgen';
+  const hTomorrow = document.querySelector('#tomorrow h3');
+  if (hTomorrow) hTomorrow.innerHTML = `${baseTomorrow} · <span class="muted">Empfehlung: ${selTomorrow.name}</span>`;
 
   // Render today + feedback select
   $("#today").classList.remove("hidden");
   $("#today-forecast").innerHTML = forecastDetailsHTML(state.lastData, state.ctx.idxToday, fToday, 0);
-  $("#today-reco").innerHTML = `<strong>Empfehlung: ${selToday.name}</strong>`;
+  state.recoTodayId = selToday.id;
+  const baseToday = state.timeMode === 'night' ? 'Heute Nacht' : 'Heute';
+  const hToday = document.querySelector('#today h3');
+  if (hToday) hToday.innerHTML = `${baseToday} · <span class=\"muted\">Empfehlung: ${selToday.name}</span>`;
   renderFeedbackSelect(items, selToday.id);
   attachSparklineHandlers();
 }
@@ -311,15 +317,18 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
   const code = Number(data.hourly.weathercode?.[idx] ?? 0);
   const icon = weatherIcon(code, state.timeMode === 'night');
   const label = weatherLabel(code);
+  const wdir = Number(data.hourly.winddirection_10m?.[idx] ?? 0);
+  const dirArrows = ['↑','↗','→','↘','↓','↙','←','↖'];
+  const dir = dirArrows[Math.round(((wdir % 360) / 45)) % 8];
 
   const spark = makeSparkline(data, dayStr);
   return `
     <div class="forecast">
       <div class="forecast-text">
         <div><strong>${label}</strong></div>
-        <div class="muted">Gefühlt ${fmt(f.temp + state.sensitivity, "°C")}, Luft ${fmt(f.tAir ?? f.temp, "°C")}</div>
-        <div class="muted">Wind ${fmt(f.wind, " m/s")}, Böen ${fmt(f.gust ?? f.wind, " m/s")}</div>
-        <div class="muted">Regenrisiko ${fmt((f.pprob||0)*100, "%")}, Regenstunden ~ ${fmt(rainHours, "h")}, Regenmenge ~ ${Math.round(rainSum*10)/10} mm</div>
+        <div class="muted">🌡️ Gefühlt ${fmt(f.temp + state.sensitivity, "°C")} • Luft ${fmt(f.tAir ?? f.temp, "°C")}</div>
+        <div class="muted">🌬️ Wind ${fmt(f.wind, " m/s")} ${dir} • Böen ${fmt(f.gust ?? f.wind, " m/s")}</div>
+        <div class="muted">💧 Regenrisiko ${fmt((f.pprob||0)*100, "%")} • Regenstunden ~ ${fmt(rainHours, "h")} • Regenmenge ~ ${Math.round(rainSum*10)/10} mm</div>
         <div class="muted">Luftfeuchte ${fmt((f.rh||0)*100, "%")}, UV max ${uvMax}</div>
         <div class="sparkline" role="img" aria-label="Tagesverlauf" data-temps-app='${JSON.stringify(spark.tempsApp)}' data-temps-air='${JSON.stringify(spark.tempsAir)}' data-probs='${JSON.stringify(spark.probs)}' data-hours='${JSON.stringify(spark.hours)}'>${spark.svg}</div>
       </div>
@@ -351,6 +360,19 @@ function setupFeedback() {
     if (idx >= 0) ds[idx] = sample; else ds.push(sample);
     saveDataset(ds);
   showToast(`Feedback gespeichert für ${todayKey}.`, 'ok', 2200);
+    checkAutoRetrain();
+  });
+  $("#fb-ok")?.addEventListener("click", () => {
+    if (!state.lastData || !state.ctx) return;
+    const labelId = state.recoTodayId || $("#fb-select").value;
+    const feat = toVector(state.ctx.fToday);
+    const todayKey = new Date().toISOString().slice(0,10);
+    const sample = { date: todayKey, x: feat, y: labelId };
+    const ds = loadDataset();
+    const idx = ds.findIndex(s => s.date === todayKey);
+    if (idx >= 0) ds[idx] = sample; else ds.push(sample);
+    saveDataset(ds);
+    showToast('Danke! Empfehlung passt.', 'ok', 2000);
     checkAutoRetrain();
   });
 }

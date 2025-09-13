@@ -1,16 +1,16 @@
-const CACHE = "pferdedecke-v7"; // bump to invalidate after adding local TF.js
+const CACHE = "pferdedecke-v8"; // relative paths for GitHub Pages project sites
 const ASSETS = [
-  "/pwa/",
-  "/pwa/index.html",
-  "/pwa/styles.css",
-  "/pwa/app.js",
-  "/pwa/vendor/tf.min.js",
-  "/pwa/manifest.json",
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./vendor/tf.min.js",
+  "./manifest.json",
   // Icons sind optional/Platzhalter; falls vorhanden, werden sie gecached
-  "/pwa/icons/icon-192.png",
-  "/pwa/icons/icon-512.png",
-  "/pwa/icons/apple-touch-icon-180.png",
-  "/pwa/icons/Logo.png"
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./icons/apple-touch-icon-180.png",
+  "./icons/Logo.png"
 ];
 
 self.addEventListener("install", (e) => {
@@ -38,6 +38,6 @@ self.addEventListener("fetch", (e) => {
         caches.open(CACHE).then((c) => c.put(request, copy));
       }
       return resp;
-    }).catch(() => caches.match("/pwa/index.html")))
+    }).catch(() => caches.match("./index.html")))
   );
 });

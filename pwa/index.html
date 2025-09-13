@@ -6,23 +6,23 @@
     <meta name="theme-color" content="#0b5fff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <link rel="manifest" href="/pwa/manifest.json" />
+    <link rel="manifest" href="./manifest.json" />
     <!-- App Icons -->
     <!-- iOS nutzt bevorzugt 180x180 -->
-    <link rel="apple-touch-icon" sizes="180x180" href="/pwa/icons/apple-touch-icon-180.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-180.png" />
     <!-- Zusätzliche Größen (optional) -->
-    <link rel="apple-touch-icon" sizes="192x192" href="/pwa/icons/icon-192.png" />
-    <link rel="apple-touch-icon" sizes="512x512" href="/pwa/icons/icon-512.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png" />
     <!-- Favicon / Android Launcher -->
-    <link rel="icon" href="/pwa/icons/icon-192.png" />
+    <link rel="icon" href="icons/icon-192.png" />
     <meta name="apple-mobile-web-app-title" content="Pferdedecke" />
     <title>Pferdedecke</title>
-    <link rel="stylesheet" href="/pwa/styles.css" />
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div id="ptr" aria-hidden="true"><div class="ptr-inner"><div class="ptr-spinner hidden"></div><div class="ptr-label">Zum Aktualisieren ziehen</div></div></div>
     <header>
-      <h1><img src="/pwa/icons/icon-192.png" alt="" class="logo-img" /> Pferdedecke</h1>
+      <h1><img src="icons/icon-192.png" alt="" class="logo-img" /> Pferdedecke</h1>
       <div class="row">
         <button id="btn-menu" class="icon" aria-label="Menü" title="Menü">☰</button>
       </div>
@@ -35,7 +35,7 @@
     </header>
 
     <main>
-      <section id="status" class="card">Standort wird ermittelt…</section>
+      
 
       <section id="tomorrow" class="card hidden">
         <h3>Morgen</h3>
@@ -119,14 +119,16 @@
       </div>
     </div>
 
-    <script src="/pwa/vendor/tf.min.js"></script>
-    <script type="module" src="/pwa/app.js"></script>
+    <script src="./vendor/tf.min.js"></script>
+    <script type="module" src="./app.js"></script>
     <script>
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/pwa/sw.js").catch(console.error);
+        navigator.serviceWorker.register("./sw.js").catch(console.error);
       }
     </script>
   </body>
+  <!-- Toast container -->
+  <div id="toaster" class="toaster" aria-live="polite" aria-atomic="true"></div>
   <!-- Monatliches Backup-Prompt -->
   <div id="backup-prompt" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="backup-title">
     <div class="panel" style="max-width: 520px">

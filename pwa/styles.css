@@ -140,6 +140,35 @@ button[data-fb="cold"], button[data-fb="warm"] { background: #2b3242; color: var
   body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 }
 
+/* Toasts */
+.toaster {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  z-index: 1300;
+  pointer-events: none;
+}
+.toast {
+  background: #10151c;
+  color: var(--fg);
+  border: 1px solid #263042;
+  border-radius: 12px;
+  padding: 10px 14px;
+  max-width: min(92vw, 640px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .18s ease, transform .18s ease;
+  pointer-events: auto;
+}
+.toast.visible { opacity: 0.98; transform: translateY(0); }
+.toast.ok { border-color: var(--ok); }
+.toast.warn { border-color: var(--warn); }
+.toast.error { border-color: #cc3a3a; }
+
 /* Einstellungen Overlay */
 .overlay {
   position: fixed;

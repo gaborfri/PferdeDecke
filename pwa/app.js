@@ -1,4 +1,19 @@
 const $ = (sel) => document.querySelector(sel);
+function showToast(message, variant = 'info', duration = 3000) {
+  try {
+    const host = document.getElementById('toaster') || (()=>{
+      const d = document.createElement('div'); d.id = 'toaster'; d.className = 'toaster'; document.body.appendChild(d); return d;
+    })();
+    const el = document.createElement('div');
+    el.className = `toast ${variant}`;
+    el.textContent = message;
+    host.appendChild(el);
+    requestAnimationFrame(()=> el.classList.add('visible'));
+    const remove = ()=>{ el.classList.remove('visible'); setTimeout(()=> el.remove(), 220); };
+    if (duration > 0) setTimeout(remove, duration);
+    return { dismiss: remove };
+  } catch {}
+}
 const fmt = (n, unit) => `${Math.round(n)}${unit}`;
 
 // ---------- Config & State ----------
@@ -233,8 +248,7 @@ function toVector(feat){
 }
 
 function render(data) {
-  const s = $("#status");
-  s.textContent = "Aktualisiert.";
+  showToast('Aktualisiert.', 'ok', 1600);
 
   // Build indices based on mode
   const localHourIso = (d) => new Date(d).toISOString().slice(0,13)+":00"; // approx to hour
@@ -336,7 +350,7 @@ function setupFeedback() {
     const idx = ds.findIndex(s => s.date === todayKey);
     if (idx >= 0) ds[idx] = sample; else ds.push(sample);
     saveDataset(ds);
-    $("#status").textContent = `Feedback gespeichert für ${todayKey}.`;
+  showToast(`Feedback gespeichert für ${todayKey}.`, 'ok', 2200);
     checkAutoRetrain();
   });
 }
@@ -427,10 +441,10 @@ async function exportBackup(){
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url), 2000);
     localStorage.setItem('last_backup', new Date().toISOString());
-    document.getElementById('status').textContent = `Backup exportiert.`;
+    showToast('Backup exportiert.', 'ok', 2200);
   } catch (e) {
     console.error(e);
-    document.getElementById('status').textContent = 'Backup-Export fehlgeschlagen.';
+    showToast('Backup-Export fehlgeschlagen.', 'error', 3000);
   }
 }
 
@@ -481,13 +495,13 @@ function importBackup(){
       }
 
       localStorage.setItem('last_backup', new Date().toISOString());
-      document.getElementById('status').textContent = 'Backup importiert.';
+      showToast('Backup importiert.', 'ok', 2200);
       refreshDerived();
       init(true);
       checkAutoRetrain();
     } catch (e) {
       console.error(e);
-      document.getElementById('status').textContent = 'Backup-Import fehlgeschlagen.';
+      showToast('Backup-Import fehlgeschlagen.', 'error', 3000);
     }
   }, { once: true });
   inp.click();
@@ -590,7 +604,7 @@ async function loadModelIfAny(){
 
 async function retrain(){
   const ds = loadDataset();
-  if (ds.length < 8) { $("#status").textContent = "Zu wenig Feedback (min. 8 Tage)"; return; }
+  if (ds.length < 8) { showToast('Zu wenig Feedback (min. 8 Tage)', 'warn', 2800); return; }
   const items = state.items;
   const idToIdx = new Map(items.map((it,i)=>[it.id,i]));
   const X = []; const Y = [];
@@ -601,7 +615,7 @@ async function retrain(){
     X.push(alignVec(x, targetLen));
     Y.push(idToIdx.get(s.y));
   }
-  if (X.length < 4) { $("#status").textContent = "Nicht genug gültige Daten"; return; }
+  if (X.length < 4) { showToast('Nicht genug gültige Daten', 'warn', 2800); return; }
   const mean = new Array(X[0].length).fill(0);
   const std = new Array(X[0].length).fill(0);
   for (let j=0;j<mean.length;j++){ mean[j] = X.reduce((a,r)=>a+r[j],0)/X.length; }
@@ -615,13 +629,13 @@ async function retrain(){
   model.add(tf.layers.dense({units: 8, activation: 'relu', inputShape: [Xn[0].length]}));
   model.add(tf.layers.dense({units: items.length, activation: 'softmax'}));
   model.compile({optimizer: tf.train.adam(0.05), loss: 'categoricalCrossentropy', metrics: ['accuracy']});
-  $("#status").textContent = "Training…";
+  showToast('Training…', 'info', 1600);
   await model.fit(xs, ysOH, {epochs: 60, batchSize: 8, shuffle: true});
   await model.save('localstorage://kleiderwetter-model');
   localStorage.setItem("model_meta", JSON.stringify({ mean, std, items: items.map(i=>i.id) }));
   state.model = model; state.modelMeta = { mean, std, items: items.map(i=>i.id) };
   xs.dispose(); ys.dispose(); ysOH.dispose();
-  $("#status").textContent = "Training fertig. Modell gespeichert.";
+  showToast('Training fertig. Modell gespeichert.', 'ok', 2600);
   // Merke Trainingsstand (für Auto-Retrain)
   try { localStorage.setItem('last_trained_count', String(ds.length)); } catch {}
   refreshDerived();
@@ -632,12 +646,12 @@ async function init(force = false) {
   try {
     if (state.locMode === 'manual') {
       const name = state.locationName?.trim();
-      $("#status").textContent = `Standort: ${name ? name + " · " : ""}${state.manualLat}, ${state.manualLon}. Wetter wird geladen…`;
+      showToast(`Standort: ${name ? name + " · " : ""}${state.manualLat}, ${state.manualLon}.`, 'info', 2200);
     } else {
-      $("#status").textContent = "Standort (GPS) wird ermittelt…";
+      showToast('Standort (GPS) wird ermittelt…', 'info', 2200);
     }
     const { lat, lon } = await getLocation();
-    $("#status").textContent = "Wetter wird geladen…";
+    showToast('Wetter wird geladen…', 'info', 1800);
 
     // Cache im localStorage, um Offline‑Start zu erlauben
     const cacheKey = `wx_${state.locMode}_${lat.toFixed(3)}_${lon.toFixed(3)}`;
@@ -660,7 +674,7 @@ async function init(force = false) {
     checkAutoRetrain();
   } catch (e) {
     console.error(e);
-    $("#status").textContent = `Fehler: ${e.message}`;
+    showToast(`Fehler: ${e.message}`, 'error', 4000);
   }
 }
 
@@ -738,7 +752,7 @@ function setupLocationUI(){
     const lat = Number(latI.value);
     const lon = Number(lonI.value);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)){
-      $("#status").textContent = "Bitte gültige Koordinaten eingeben.";
+      showToast('Bitte gültige Koordinaten eingeben.', 'warn', 2500);
       return;
     }
     state.manualLat = lat; state.manualLon = lon;
@@ -746,15 +760,15 @@ function setupLocationUI(){
     localStorage.setItem('manual_lat', String(lat));
     localStorage.setItem('manual_lon', String(lon));
     localStorage.setItem('location_name', state.locationName);
-    $("#status").textContent = "Standort gespeichert.";
+    showToast('Standort gespeichert.', 'ok', 2200);
     init(true);
   });
 
   parseB?.addEventListener('click', ()=>{
     const src = (urlI?.value || '').trim();
-    if (!src){ $("#status").textContent = "Bitte einen Karten-Link einfügen."; return; }
+    if (!src){ showToast('Bitte einen Karten-Link einfügen.', 'warn', 2600); return; }
     const parsed = parseMapLink(src);
-    if (!parsed){ $("#status").textContent = "Konnte keine Koordinaten im Link finden."; return; }
+    if (!parsed){ showToast('Konnte keine Koordinaten im Link finden.', 'warn', 2800); return; }
     const { lat, lon, name } = parsed;
     latI.value = String(lat);
     lonI.value = String(lon);
@@ -764,7 +778,7 @@ function setupLocationUI(){
     localStorage.setItem('manual_lat', String(lat));
     localStorage.setItem('manual_lon', String(lon));
     localStorage.setItem('location_name', state.locationName);
-    $("#status").textContent = "Koordinaten aus Link übernommen.";
+    showToast('Koordinaten aus Link übernommen.', 'ok', 2200);
     init(true);
   });
 
@@ -773,7 +787,7 @@ function setupLocationUI(){
     const lon = Number(lonI.value);
     const name = (nameI.value||'Standort').trim();
     if (!Number.isFinite(lat) || !Number.isFinite(lon)){
-      $("#status").textContent = "Bitte gültige Koordinaten eingeben.";
+      showToast('Bitte gültige Koordinaten eingeben.', 'warn', 2500);
       return;
     }
     const url = `https://maps.apple.com/?ll=${lat},${lon}&q=${encodeURIComponent(name)}`;

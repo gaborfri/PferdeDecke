@@ -322,14 +322,33 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
   const dir = dirArrows[Math.round(((wdir % 360) / 45)) % 8];
 
   const spark = makeSparkline(data, dayStr);
+  // Temperature chip
+  const tFeel = f.temp + state.sensitivity;
+  const tAir = f.tAir ?? f.temp;
+  const showBothTemps = Math.abs(tAir - tFeel) >= 1;
+  const chipTemp = `<div class="metric">🌡️ <div><span class="val">${fmt(tFeel, "°C")}</span>${showBothTemps ? ` • Luft ${fmt(tAir, "°C")}` : ""}</div></div>`;
+  // Wind chip (km/h), gusts only if +5 km/h
+  const wKmh = Math.round((f.wind||0) * 3.6);
+  const gKmh = Math.round(((f.gust ?? f.wind) || 0) * 3.6);
+  const gustText = (gKmh - wKmh) >= 5 ? ` • Böen ${gKmh}` : '';
+  const chipWind = `<div class="metric"><span class="icon-w" style="transform: rotate(${wdir}deg)">➤</span><div><span class="val">${wKmh} km/h</span>${gustText}</div></div>`;
+  // Rain chip (compact, conditional hours/sum)
+  const prob = Math.round((f.pprob||0)*100);
+  const parts = [`<span class="val">${prob}%</span>`];
+  if (rainHours >= 0.3) parts.push(`⌛ ~ ${Math.round(rainHours*10)/10} h`);
+  if (rainSum >= 0.2) parts.push(`☔ ${Math.round(rainSum*10)/10} mm`);
+  const chipRain = `<div class="metric">💧 <div>${parts.join(' • ')}</div></div>`;
+  // Humidity + UV in one chip
+  const hum = Math.round((f.rh||0)*100);
+  const uvShow = (uvMax >= 1 && state.timeMode === 'day');
+  const chipHumUv = `<div class="metric">💧 <div><span class="val">${hum}%</span>${uvShow ? ` • UV ${Math.round(uvMax)}` : ''}</div></div>`;
+
+  const chips = [chipTemp, chipWind, chipRain, chipHumUv].join('');
   return `
     <div class="forecast">
       <div class="forecast-text">
         <div><strong>${label}</strong></div>
-        <div class="muted">🌡️ Gefühlt ${fmt(f.temp + state.sensitivity, "°C")} • Luft ${fmt(f.tAir ?? f.temp, "°C")}</div>
-        <div class="muted">🌬️ Wind ${fmt(f.wind, " m/s")} ${dir} • Böen ${fmt(f.gust ?? f.wind, " m/s")}</div>
-        <div class="muted">💧 ${fmt((f.pprob||0)*100, "%")} • ⌛ ~ ${fmt(rainHours, "h")} • ☔ ${Math.round(rainSum*10)/10} mm</div>
-        <div class="muted">Luftfeuchte ${fmt((f.rh||0)*100, "%")}, UV max ${uvMax}</div>
+        <div class="metrics">${chips}</div>
         <div class="sparkline" role="img" aria-label="Tagesverlauf" data-temps-app='${JSON.stringify(spark.tempsApp)}' data-temps-air='${JSON.stringify(spark.tempsAir)}' data-probs='${JSON.stringify(spark.probs)}' data-hours='${JSON.stringify(spark.hours)}'>${spark.svg}</div>
       </div>
       <div class="forecast-icon" aria-label="${label}" title="${label}">${icon}</div>

@@ -338,12 +338,11 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
   if (rainHours >= 0.3) parts.push(`⌛ ~ ${Math.round(rainHours*10)/10} h`);
   if (rainSum >= 0.2) parts.push(`☔ ${Math.round(rainSum*10)/10} mm`);
   const chipRain = `<div class="metric">💧 <div>${parts.join(' • ')}</div></div>`;
-  // Humidity + UV in one chip
-  const hum = Math.round((f.rh||0)*100);
+  // UV chip only (humidity removed)
   const uvShow = (uvMax >= 1 && state.timeMode === 'day');
-  const chipHumUv = `<div class="metric">💧 <div><span class="val">${hum}%</span>${uvShow ? ` • UV ${Math.round(uvMax)}` : ''}</div></div>`;
+  const chipUv = uvShow ? `<div class="metric">☀️ <div><span class="val">UV ${Math.round(uvMax)}</span></div></div>` : '';
 
-  const chips = [chipTemp, chipWind, chipRain, chipHumUv].join('');
+  const chips = [chipTemp, chipWind, chipRain, chipUv].filter(Boolean).join('');
   return `
     <div class="forecast">
       <div class="forecast-text">

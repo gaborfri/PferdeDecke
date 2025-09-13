@@ -1,0 +1,1082 @@
+const $ = (sel) => document.querySelector(sel);
+const fmt = (n, unit) => `${Math.round(n)}${unit}`;
+
+// ---------- Config & State ----------
+// Kategorien-Voreinstellung für Pferdedecken (Skalierung der Gramm nach ~0..100)
+const DEFAULT_ITEMS = [
+  { id: cryptoRandomId(), name: "keine", warmth: 0, waterproof: false },
+  { id: cryptoRandomId(), name: "50g", warmth: 20, waterproof: false },
+  { id: cryptoRandomId(), name: "100g", warmth: 40, waterproof: false },
+  { id: cryptoRandomId(), name: "150g", warmth: 60, waterproof: false },
+  { id: cryptoRandomId(), name: "250g", warmth: 100, waterproof: false },
+];
+
+function cryptoRandomId(){
+  try { return crypto.randomUUID(); } catch { return "id-" + Math.random().toString(36).slice(2); }
+}
+
+function loadItems(){
+  const raw = localStorage.getItem("clothing_items");
+  if (!raw) return DEFAULT_ITEMS.slice();
+  try { const parsed = JSON.parse(raw); if (Array.isArray(parsed) && parsed.length) return parsed; } catch {}
+  return DEFAULT_ITEMS.slice();
+}
+function saveItems(items){ localStorage.setItem("clothing_items", JSON.stringify(items)); }
+
+const DEFAULT_LOC = { lat: 52.37424617149301, lon: 10.436978270056711, name: "Gut Warxbüttel" };
+
+const state = {
+  sensitivity: Number(localStorage.getItem("sensitivity")) || 0,
+  items: loadItems(),
+  useML: true,
+  timeMode: localStorage.getItem("time_mode") === "night" ? "night" : "day",
+  // location settings
+  locMode: (localStorage.getItem("loc_mode") === "manual") ? "manual" : (localStorage.getItem("loc_mode") === "auto" ? "auto" : "manual"),
+  manualLat: (localStorage.getItem("manual_lat") ? Number(localStorage.getItem("manual_lat")) : DEFAULT_LOC.lat),
+  manualLon: (localStorage.getItem("manual_lon") ? Number(localStorage.getItem("manual_lon")) : DEFAULT_LOC.lon),
+  locationName: (localStorage.getItem("location_name") || DEFAULT_LOC.name),
+  model: null,
+  modelMeta: null,
+};
+
+// ---------- UI Binds ----------
+$("#sensitive").checked = state.sensitivity > 0;
+$("#sensitive").addEventListener("change", (e) => {
+  state.sensitivity = e.target.checked ? 2 : 0; // 2°C empfindlicher
+  localStorage.setItem("sensitivity", String(state.sensitivity));
+  if (state.lastData) refreshDerived();
+});
+
+// ML ist immer aktiv; keine UI nötig
+
+// day/night selector
+$("#time-mode").value = state.timeMode;
+$("#time-mode").addEventListener("change", (e)=>{
+  state.timeMode = e.target.value === 'night' ? 'night' : 'day';
+  localStorage.setItem("time_mode", state.timeMode);
+  if (state.lastData) render(state.lastData);
+});
+
+// Pull-to-refresh ersetzt den Aktualisieren-Button
+// Menu toggle
+document.getElementById("btn-menu")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const m = document.getElementById('menu');
+  m?.classList.toggle('hidden');
+});
+// Close menu on outside click
+document.addEventListener('click', (e)=>{
+  const m = document.getElementById('menu');
+  if (!m) return;
+  if (!m.classList.contains('hidden')) {
+    const within = m.contains(e.target) || document.getElementById('btn-menu')?.contains(e.target);
+    if (!within) m.classList.add('hidden');
+  }
+});
+// Menu actions
+document.getElementById('menu-settings')?.addEventListener('click', ()=>{ hideMenu(); openSettings(); });
+document.getElementById('menu-train')?.addEventListener('click', ()=>{ hideMenu(); retrain(); });
+document.getElementById('menu-export')?.addEventListener('click', ()=>{ hideMenu(); exportBackup(); });
+document.getElementById('menu-import')?.addEventListener('click', ()=>{ hideMenu(); importBackup(); });
+
+function hideMenu(){ document.getElementById('menu')?.classList.add('hidden'); }
+
+async function getLocation() {
+  // Manual override
+  if (state.locMode === 'manual') {
+    const lat = Number(state.manualLat);
+    const lon = Number(state.manualLon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      throw new Error("Bitte gültige manuelle Koordinaten speichern.");
+    }
+    return { lat, lon };
+  }
+  // GPS
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("Geolocation nicht verfügbar"));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      (err) => reject(err),
+      { maximumAge: 10 * 60_000, timeout: 15_000, enableHighAccuracy: false }
+    );
+  });
+}
+
+async function fetchWeather(lat, lon) {
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.search = new URLSearchParams({
+    latitude: lat,
+    longitude: lon,
+    hourly: [
+      "temperature_2m",
+      "apparent_temperature",
+      "relativehumidity_2m",
+      "precipitation_probability",
+      "precipitation",
+      "weathercode",
+      "windspeed_10m",
+      "windgusts_10m",
+      "winddirection_10m",
+      "uv_index"
+    ].join(","),
+    daily: [
+      "precipitation_hours",
+      "precipitation_sum",
+      "windspeed_10m_max",
+      "uv_index_max",
+      "sunrise",
+      "sunset"
+    ].join(","),
+    current_weather: "true",
+    timezone: "auto",
+  }).toString();
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Wetterfehler: ${res.status}`);
+  return res.json();
+}
+
+// ---------- Recommendation: Rule baseline using configurable items ----------
+function recommendRule(tempC, windMps, precipProb, isRaining, sensitivity = 0, items = []) {
+  // Map temperature -> desired warmth bucket (0..100)
+  const windChill = Math.max(0, (windMps - 4) * 0.7);
+  const feels = tempC - windChill + sensitivity;
+  let target;
+  if (isRaining || precipProb > 0.6) target = 60; // favor rain‑capable around mid warmth
+  else if (feels < 0) target = 90;
+  else if (feels < 5) target = 80;
+  else if (feels < 10) target = 65;
+  else if (feels < 16) target = 45;
+  else if (feels < 22) target = 20;
+  else target = 0;
+
+  const sorted = [...items].sort((a,b)=>a.warmth-b.warmth);
+  let candidates = sorted;
+  if (isRaining || precipProb > 0.6) {
+    const rainies = sorted.filter(i=>i.waterproof);
+    if (rainies.length) candidates = rainies;
+  }
+  // choose item with minimal distance to target warmth
+  let best = candidates[0];
+  let bestDist = Infinity;
+  for (const it of candidates){
+    const d = Math.abs(it.warmth - target);
+    if (d < bestDist) { best = it; bestDist = d; }
+  }
+  return best;
+}
+
+function renderWeatherDetails(data) {
+  const c = data.current_weather;
+  const windMps = c.windspeed / 3.6;
+  const idx = data.hourly.time.indexOf(c.time);
+  const apparent = idx >= 0 ? data.hourly.apparent_temperature[idx] : c.temperature;
+  const tempAir = idx >= 0 ? data.hourly.temperature_2m[idx] : c.temperature;
+  const precipProb = idx >= 0 ? (data.hourly.precipitation_probability[idx] ?? 0) / 100 : 0;
+  const humidity = idx >= 0 ? (data.hourly.relativehumidity_2m[idx] ?? 0) / 100 : 0;
+  const gust = idx >= 0 ? (data.hourly.windgusts_10m[idx] ?? 0) / 3.6 : windMps;
+  const winddir = idx >= 0 ? (data.hourly.winddirection_10m[idx] ?? c.winddirection) : c.winddirection;
+  const uv = idx >= 0 ? (data.hourly.uv_index?.[idx] ?? 0) : 0;
+
+  return {
+    temp: apparent,
+    tempAir,
+    wind: windMps,
+    precipProb,
+    isRaining: Number(c.weathercode) >= 50, // grob: 50+ sind Niederschlagscodes
+    humidity,
+    gust,
+    winddir,
+    uv,
+  };
+}
+
+// ---------- Forecast selection helpers ----------
+function pickHourIndex(data, localIso) {
+  const idx = data.hourly.time.indexOf(localIso);
+  if (idx >= 0) return idx;
+  // fallback: nearest hour same day and hour
+  const target = new Date(localIso).getTime();
+  let best = 0, bestDist = Infinity;
+  data.hourly.time.forEach((t,i)=>{
+    const d = Math.abs(new Date(t).getTime() - target);
+    if (d<bestDist){bestDist=d;best=i;}
+  });
+  return best;
+}
+
+function featuresFromIdx(data, idx){
+  const tAir = data.hourly.temperature_2m?.[idx] ?? data.hourly.apparent_temperature[idx];
+  const tApp = data.hourly.apparent_temperature[idx];
+  const wind = (data.hourly.windspeed_10m[idx] || 0) / 3.6;
+  const gust = (data.hourly.windgusts_10m?.[idx] || 0) / 3.6;
+  const wdir = Number(data.hourly.winddirection_10m?.[idx] || 0);
+  const pprob = (data.hourly.precipitation_probability[idx] || 0) / 100;
+  const precip = data.hourly.precipitation[idx] || 0;
+  const rh = (data.hourly.relativehumidity_2m?.[idx] || 0) / 100;
+  const uv = Number(data.hourly.uv_index?.[idx] || 0);
+  const code = Number(data.hourly.weathercode[idx] || 0);
+  const isRain = code >= 50 || precip > 0;
+  const dt = new Date(data.hourly.time[idx]);
+  const doy = Math.floor((Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()) - Date.UTC(dt.getFullYear(),0,0)) / 86400000);
+  const sin = Math.sin(2*Math.PI*doy/365);
+  const cos = Math.cos(2*Math.PI*doy/365);
+  const wsin = Math.sin((wdir/180)*Math.PI), wcos = Math.cos((wdir/180)*Math.PI);
+  return {temp: tApp, tAir, wind, gust, pprob, isRain, rh, uv, wsin, wcos, sin, cos};
+}
+
+function toVector(feat){
+  return [
+    feat.temp, feat.tAir ?? feat.temp, feat.wind, feat.gust ?? feat.wind,
+    feat.pprob, feat.isRain?1:0, feat.rh ?? 0, feat.uv ?? 0,
+    feat.wsin ?? 0, feat.wcos ?? 0, feat.sin, feat.cos
+  ];
+}
+
+function render(data) {
+  const s = $("#status");
+  s.textContent = "Aktualisiert.";
+
+  // Build indices based on mode
+  const localHourIso = (d) => new Date(d).toISOString().slice(0,13)+":00"; // approx to hour
+  const today = new Date();
+  const tomorrow = new Date(Date.now()+86400000);
+  if (state.timeMode === 'day') {
+    today.setHours(12,0,0,0);
+    tomorrow.setHours(8,0,0,0);
+  } else { // night
+    today.setHours(22,0,0,0);
+    tomorrow.setHours(22,0,0,0);
+  }
+  const idxToday = pickHourIndex(data, localHourIso(today));
+  const idxTomorrow = pickHourIndex(data, localHourIso(tomorrow));
+
+  const fToday = featuresFromIdx(data, idxToday);
+  const fTomorrow = featuresFromIdx(data, idxTomorrow);
+
+  state.ctx = { idxToday, idxTomorrow, fToday, fTomorrow };
+
+  // Dynamic section headings
+  const hToday = document.querySelector('#today h3');
+  const hTomorrow = document.querySelector('#tomorrow h3');
+  if (hToday) hToday.textContent = state.timeMode === 'night' ? 'Heute Nacht' : 'Heute';
+  if (hTomorrow) hTomorrow.textContent = state.timeMode === 'night' ? 'Morgen Nacht' : 'Morgen';
+
+  refreshDerived();
+}
+
+function refreshDerived(){
+  if (!state.lastData || !state.ctx) return;
+  const { fToday, fTomorrow } = state.ctx;
+  const items = state.items;
+
+  // Recommendation selection (ML or rules)
+  const selToday = selectItem(fToday, items);
+  const selTomorrow = selectItem(fTomorrow, items);
+
+  // Render tomorrow
+  $("#tomorrow").classList.remove("hidden");
+  $("#tomorrow-forecast").innerHTML = forecastDetailsHTML(state.lastData, state.ctx.idxTomorrow, fTomorrow, 1);
+  $("#tomorrow-reco").innerHTML = `<strong>Empfehlung: ${selTomorrow.name}</strong>`;
+
+  // Render today + feedback select
+  $("#today").classList.remove("hidden");
+  $("#today-forecast").innerHTML = forecastDetailsHTML(state.lastData, state.ctx.idxToday, fToday, 0);
+  $("#today-reco").innerHTML = `<strong>Empfehlung: ${selToday.name}</strong>`;
+  renderFeedbackSelect(items, selToday.id);
+  attachSparklineHandlers();
+}
+
+function forecastDetailsHTML(data, idx, f, dayOffset){
+  // daily context
+  const hourDate = new Date(data.hourly.time[idx]);
+  const dayStr = hourDate.toISOString().slice(0,10);
+  const dailyIdx = data.daily?.time?.indexOf(dayStr) ?? -1;
+  const rainHours = dailyIdx>=0 ? (data.daily.precipitation_hours?.[dailyIdx] ?? 0) : 0;
+  const rainSum = dailyIdx>=0 ? (data.daily.precipitation_sum?.[dailyIdx] ?? 0) : 0;
+  const uvMax = dailyIdx>=0 ? (data.daily.uv_index_max?.[dailyIdx] ?? f.uv ?? 0) : (f.uv ?? 0);
+  const code = Number(data.hourly.weathercode?.[idx] ?? 0);
+  const icon = weatherIcon(code, state.timeMode === 'night');
+  const label = weatherLabel(code);
+
+  const spark = makeSparkline(data, dayStr);
+  return `
+    <div class="forecast">
+      <div class="forecast-text">
+        <div><strong>${label}</strong></div>
+        <div class="muted">Gefühlt ${fmt(f.temp + state.sensitivity, "°C")}, Luft ${fmt(f.tAir ?? f.temp, "°C")}</div>
+        <div class="muted">Wind ${fmt(f.wind, " m/s")}, Böen ${fmt(f.gust ?? f.wind, " m/s")}</div>
+        <div class="muted">Regenrisiko ${fmt((f.pprob||0)*100, "%")}, Regenstunden ~ ${fmt(rainHours, "h")}, Regenmenge ~ ${Math.round(rainSum*10)/10} mm</div>
+        <div class="muted">Luftfeuchte ${fmt((f.rh||0)*100, "%")}, UV max ${uvMax}</div>
+        <div class="sparkline" role="img" aria-label="Tagesverlauf" data-temps-app='${JSON.stringify(spark.tempsApp)}' data-temps-air='${JSON.stringify(spark.tempsAir)}' data-probs='${JSON.stringify(spark.probs)}' data-hours='${JSON.stringify(spark.hours)}'>${spark.svg}</div>
+      </div>
+      <div class="forecast-icon" aria-label="${label}" title="${label}">${icon}</div>
+    </div>
+  `;
+}
+
+function renderFeedbackSelect(items, suggestedId){
+  const sel = $("#fb-select");
+  sel.innerHTML = "";
+  for (const it of items){
+    const opt = document.createElement("option");
+    opt.value = it.id; opt.textContent = it.name;
+    if (it.id === suggestedId) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function setupFeedback() {
+  $("#fb-save").addEventListener("click", () => {
+    if (!state.lastData || !state.ctx) return;
+    const labelId = $("#fb-select").value;
+    const feat = toVector(state.ctx.fToday);
+    const todayKey = new Date().toISOString().slice(0,10);
+    const sample = { date: todayKey, x: feat, y: labelId };
+    const ds = loadDataset();
+    const idx = ds.findIndex(s => s.date === todayKey);
+    if (idx >= 0) ds[idx] = sample; else ds.push(sample);
+    saveDataset(ds);
+    $("#status").textContent = `Feedback gespeichert für ${todayKey}.`;
+    checkAutoRetrain();
+  });
+}
+
+// ---------- Items Config UI ----------
+function renderItems(){
+  const cont = $("#items");
+  cont.innerHTML = "";
+  const items = state.items.sort((a,b)=>a.warmth-b.warmth);
+  for (const it of items){
+    const row = document.createElement("div");
+    row.className = "item-row";
+    row.innerHTML = `
+      <input type="text" value="${it.name}" aria-label="Name" />
+      <input type="number" value="${it.warmth}" min="0" max="100" step="5" aria-label="Wärmegrad" />
+      <button title="Entfernen">Entf.</button>
+    `;
+    const [nameI, warmI, delB] = row.querySelectorAll("input,button");
+    nameI.addEventListener("input", ()=>{ it.name = nameI.value; saveItems(state.items); refreshDerived(); });
+    warmI.addEventListener("input", ()=>{ it.warmth = Number(warmI.value)||0; saveItems(state.items); refreshDerived(); });
+    delB.addEventListener("click", ()=>{ state.items = state.items.filter(x=>x.id!==it.id); saveItems(state.items); renderItems(); refreshDerived(); });
+    cont.appendChild(row);
+  }
+}
+
+$("#add-item").addEventListener("click", ()=>{
+  state.items.push({ id: cryptoRandomId(), name: "Neu", warmth: 50, waterproof: false });
+  saveItems(state.items); renderItems(); refreshDerived();
+});
+$("#reset-items").addEventListener("click", ()=>{
+  if (!confirm("Kategorien auf Standard zurücksetzen?")) return;
+  state.items = DEFAULT_ITEMS.slice(); saveItems(state.items); renderItems(); refreshDerived();
+});
+
+// ---------- Dataset storage ----------
+function loadDataset(){
+  try { return JSON.parse(localStorage.getItem("dataset")||"[]"); } catch { return []; }
+}
+function saveDataset(ds){ localStorage.setItem("dataset", JSON.stringify(ds)); }
+
+// ---------- Export / Import (Feedback) ----------
+async function exportBackup(){
+  try {
+    // Ensure model is loaded if present in storage
+    if (!state.model) await loadModelIfAny();
+
+    // Capture model artifacts if available
+    let modelDump = null;
+    if (state.model) {
+      const holder = {};
+      await state.model.save({
+        save: async (artifacts) => {
+          holder.artifacts = artifacts;
+          return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: typeof artifacts.modelTopology === 'object' ? 'JSON' : 'GraphDef', weightDataBytes: artifacts.weightData ? artifacts.weightData.byteLength : 0 } };
+        }
+      });
+      if (holder.artifacts) {
+        modelDump = {
+          modelTopology: holder.artifacts.modelTopology,
+          weightSpecs: holder.artifacts.weightSpecs,
+          weightData: holder.artifacts.weightData ? arrayBufferToBase64(holder.artifacts.weightData) : null,
+        };
+      }
+    }
+
+    const payload = {
+      type: 'pferdedecke-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      settings: {
+        sensitivity: state.sensitivity,
+        time_mode: state.timeMode,
+        loc_mode: state.locMode,
+        manual_lat: state.manualLat,
+        manual_lon: state.manualLon,
+        location_name: state.locationName,
+      },
+      items: state.items,
+      dataset: loadDataset(),
+      model_meta: state.modelMeta,
+      model: modelDump,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
+    a.href = url; a.download = `pferdedecke-backup-${date}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+    localStorage.setItem('last_backup', new Date().toISOString());
+    document.getElementById('status').textContent = `Backup exportiert.`;
+  } catch (e) {
+    console.error(e);
+    document.getElementById('status').textContent = 'Backup-Export fehlgeschlagen.';
+  }
+}
+
+function importBackup(){
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'application/json,.json';
+  inp.addEventListener('change', async ()=>{
+    const f = inp.files?.[0]; if (!f) return;
+    try {
+      const text = await f.text();
+      const obj = JSON.parse(text);
+      if (!obj || obj.type !== 'pferdedecke-backup') throw new Error('Unerwartetes Format');
+      // Restore settings
+      const s = obj.settings || {};
+      if ('sensitivity' in s) { state.sensitivity = Number(s.sensitivity)||0; localStorage.setItem('sensitivity', String(state.sensitivity)); $("#sensitive").checked = state.sensitivity>0; }
+      if (s.time_mode){ state.timeMode = (s.time_mode==='night'?'night':'day'); localStorage.setItem('time_mode', state.timeMode); $("#time-mode").value = state.timeMode; }
+      if (s.loc_mode){ state.locMode = (s.loc_mode==='manual'?'manual':'auto'); localStorage.setItem('loc_mode', state.locMode); }
+      if (Number.isFinite(s.manual_lat)) { state.manualLat = Number(s.manual_lat); localStorage.setItem('manual_lat', String(state.manualLat)); }
+      if (Number.isFinite(s.manual_lon)) { state.manualLon = Number(s.manual_lon); localStorage.setItem('manual_lon', String(state.manualLon)); }
+      if (typeof s.location_name === 'string') { state.locationName = s.location_name; localStorage.setItem('location_name', state.locationName); }
+
+      // Restore items
+      if (Array.isArray(obj.items)) { state.items = obj.items; saveItems(state.items); renderItems(); }
+
+      // Restore dataset
+      if (Array.isArray(obj.dataset)) { saveDataset(obj.dataset); }
+
+      // Restore model meta
+      if (obj.model_meta) { state.modelMeta = obj.model_meta; localStorage.setItem('model_meta', JSON.stringify(state.modelMeta)); }
+
+      // Restore model weights if provided
+      if (obj.model && (obj.model.modelTopology || obj.model.weightSpecs)) {
+        const modelArtifacts = {
+          modelTopology: obj.model.modelTopology,
+          weightSpecs: obj.model.weightSpecs,
+          weightData: obj.model.weightData ? base64ToArrayBuffer(obj.model.weightData) : undefined,
+        };
+        const handler = {
+          load: async () => modelArtifacts
+        };
+        const model = await tf.loadLayersModel(handler);
+        await model.save('localstorage://kleiderwetter-model');
+        state.model = model;
+      } else {
+        // Try to load model from localstorage if present
+        await loadModelIfAny();
+      }
+
+      localStorage.setItem('last_backup', new Date().toISOString());
+      document.getElementById('status').textContent = 'Backup importiert.';
+      refreshDerived();
+      init(true);
+      checkAutoRetrain();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('status').textContent = 'Backup-Import fehlgeschlagen.';
+    }
+  }, { once: true });
+  inp.click();
+}
+
+function arrayBufferToBase64(buffer){
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i=0; i<bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+function base64ToArrayBuffer(base64){
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i=0; i<len; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+// ---------- ML selection ----------
+function alignVec(x, targetLen){
+  const arr = x.slice(0, targetLen);
+  while (arr.length < targetLen) arr.push(0);
+  return arr;
+}
+
+function selectItem(feat, items){
+  if (state.useML && state.model && state.modelMeta && state.modelMeta.items) {
+    try {
+      const vec = toVector(feat);
+      const aligned = alignVec(vec, state.modelMeta.mean.length);
+      const x = normalizeVec(aligned, state.modelMeta.mean, state.modelMeta.std);
+      const t = tf.tensor2d([x]);
+      const logits = state.model.predict(t);
+      const probs = logits.arraySync()[0];
+      t.dispose(); logits.dispose?.();
+      // map to item order as in meta
+      const order = state.modelMeta.items;
+      let bestIdx = 0; let best = -Infinity;
+      probs.forEach((p,i)=>{ if (p>best){best=p; bestIdx=i;} });
+      const id = order[bestIdx];
+      const found = items.find(it=>it.id===id);
+      if (found) return found;
+    } catch (e) { console.warn("ML predict failed, fallback rules", e); }
+  }
+  return recommendRule(feat.temp, feat.wind, feat.pprob, feat.isRain, state.sensitivity, items);
+}
+
+function normalizeVec(x, mean, std){ return x.map((v,i)=> std[i] ? (v-mean[i])/std[i] : v); }
+
+function weatherIcon(code, night){
+  // Open-Meteo WMO codes mapping to emojis
+  if (code === 0) return night ? '🌙' : '☀️';
+  if (code === 1) return night ? '🌙' : '🌤️';
+  if (code === 2) return '⛅';
+  if (code === 3) return '☁️';
+  if (code === 45 || code === 48) return '🌫️';
+  if (code >= 51 && code <= 55) return '🌦️'; // drizzle
+  if (code === 56 || code === 57) return '🌧️';
+  if (code >= 61 && code <= 65) return '🌧️'; // rain
+  if (code === 66 || code === 67) return '🌧️';
+  if (code >= 71 && code <= 75) return '🌨️'; // snow
+  if (code === 77) return '🌨️';
+  if (code >= 80 && code <= 82) return '🌦️'; // showers
+  if (code === 85 || code === 86) return '🌨️';
+  if (code === 95) return '⛈️';
+  if (code === 96 || code === 99) return '⛈️';
+  return '🌡️';
+}
+
+function weatherLabel(code){
+  if (code === 0) return 'Klar';
+  if (code === 1) return 'Überwiegend klar';
+  if (code === 2) return 'Teils bewölkt';
+  if (code === 3) return 'Bewölkt';
+  if (code === 45 || code === 48) return 'Nebel';
+  if (code >= 51 && code <= 55) return 'Nieselregen';
+  if (code === 56 || code === 57) return 'Gefrierender Niesel';
+  if (code >= 61 && code <= 65) return 'Regen';
+  if (code === 66 || code === 67) return 'Gefrierender Regen';
+  if (code >= 71 && code <= 75) return 'Schneefall';
+  if (code === 77) return 'Schneekörner';
+  if (code >= 80 && code <= 82) return 'Regenschauer';
+  if (code === 85 || code === 86) return 'Schneeschauer';
+  if (code === 95) return 'Gewitter';
+  if (code === 96 || code === 99) return 'Gewitter mit Hagel';
+  return 'Wetter';
+}
+
+async function loadModelIfAny(){
+  try {
+    const meta = JSON.parse(localStorage.getItem("model_meta")||"null");
+    if (!meta) return;
+    const model = await tf.loadLayersModel("localstorage://kleiderwetter-model");
+    state.model = model; state.modelMeta = meta;
+  } catch (e) {
+    console.warn("Kein gespeichertes Modell geladen", e);
+  }
+}
+
+async function retrain(){
+  const ds = loadDataset();
+  if (ds.length < 8) { $("#status").textContent = "Zu wenig Feedback (min. 8 Tage)"; return; }
+  const items = state.items;
+  const idToIdx = new Map(items.map((it,i)=>[it.id,i]));
+  const X = []; const Y = [];
+  const targetLen = toVector(state.ctx?.fToday || {temp:0,tAir:0,wind:0,gust:0,pprob:0,isRain:0,rh:0,uv:0,wsin:0,wcos:0,sin:0,cos:0}).length;
+  for (const s of ds){
+    if (!idToIdx.has(s.y)) continue;
+    const x = Array.isArray(s.x) ? s.x : [];
+    X.push(alignVec(x, targetLen));
+    Y.push(idToIdx.get(s.y));
+  }
+  if (X.length < 4) { $("#status").textContent = "Nicht genug gültige Daten"; return; }
+  const mean = new Array(X[0].length).fill(0);
+  const std = new Array(X[0].length).fill(0);
+  for (let j=0;j<mean.length;j++){ mean[j] = X.reduce((a,r)=>a+r[j],0)/X.length; }
+  for (let j=0;j<std.length;j++){ const m=mean[j]; std[j] = Math.sqrt(X.reduce((a,r)=>a+(r[j]-m)**2,0)/X.length) || 1; }
+  const Xn = X.map(r=>normalizeVec(r,mean,std));
+  const xs = tf.tensor2d(Xn);
+  const ys = tf.tensor1d(Y,'int32');
+  const ysOH = tf.oneHot(ys, items.length);
+
+  const model = tf.sequential();
+  model.add(tf.layers.dense({units: 8, activation: 'relu', inputShape: [Xn[0].length]}));
+  model.add(tf.layers.dense({units: items.length, activation: 'softmax'}));
+  model.compile({optimizer: tf.train.adam(0.05), loss: 'categoricalCrossentropy', metrics: ['accuracy']});
+  $("#status").textContent = "Training…";
+  await model.fit(xs, ysOH, {epochs: 60, batchSize: 8, shuffle: true});
+  await model.save('localstorage://kleiderwetter-model');
+  localStorage.setItem("model_meta", JSON.stringify({ mean, std, items: items.map(i=>i.id) }));
+  state.model = model; state.modelMeta = { mean, std, items: items.map(i=>i.id) };
+  xs.dispose(); ys.dispose(); ysOH.dispose();
+  $("#status").textContent = "Training fertig. Modell gespeichert.";
+  // Merke Trainingsstand (für Auto-Retrain)
+  try { localStorage.setItem('last_trained_count', String(ds.length)); } catch {}
+  refreshDerived();
+}
+
+// ---------- Init ----------
+async function init(force = false) {
+  try {
+    if (state.locMode === 'manual') {
+      const name = state.locationName?.trim();
+      $("#status").textContent = `Standort: ${name ? name + " · " : ""}${state.manualLat}, ${state.manualLon}. Wetter wird geladen…`;
+    } else {
+      $("#status").textContent = "Standort (GPS) wird ermittelt…";
+    }
+    const { lat, lon } = await getLocation();
+    $("#status").textContent = "Wetter wird geladen…";
+
+    // Cache im localStorage, um Offline‑Start zu erlauben
+    const cacheKey = `wx_${state.locMode}_${lat.toFixed(3)}_${lon.toFixed(3)}`;
+    if (!force) {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const data = JSON.parse(cached);
+          state.lastData = data;
+          render(data);
+        } catch {}
+      }
+    }
+
+    const data = await fetchWeather(lat, lon);
+    localStorage.setItem(cacheKey, JSON.stringify(data));
+    state.lastData = data;
+    render(data);
+    // Check auto-train after data available
+    checkAutoRetrain();
+  } catch (e) {
+    console.error(e);
+    $("#status").textContent = `Fehler: ${e.message}`;
+  }
+}
+
+renderItems();
+setupFeedback();
+setupLocationUI();
+loadModelIfAny().finally(()=>init());
+
+// ---------- Monthly backup prompt ----------
+function checkMonthlyBackup(){
+  try {
+    const last = localStorage.getItem('last_backup');
+    const lastT = last ? Date.parse(last) : 0;
+    const days = (Date.now() - lastT) / 86400000;
+    if (!last || days >= 28) {
+      const ov = document.getElementById('backup-prompt');
+      ov?.classList.remove('hidden');
+    }
+  } catch {}
+}
+
+document.getElementById('backup-now')?.addEventListener('click', async ()=>{
+  document.getElementById('backup-prompt')?.classList.add('hidden');
+  await exportBackup();
+});
+document.getElementById('backup-later')?.addEventListener('click', ()=>{
+  localStorage.setItem('last_backup', new Date().toISOString());
+  document.getElementById('backup-prompt')?.classList.add('hidden');
+});
+document.getElementById('btn-backup-close')?.addEventListener('click', ()=>{
+  document.getElementById('backup-prompt')?.classList.add('hidden');
+});
+
+// Slight delay to avoid interrupting first render
+setTimeout(checkMonthlyBackup, 1500);
+
+// ---------- Auto-Retrain ----------
+function checkAutoRetrain(){
+  try {
+    const ds = loadDataset();
+    const last = Number(localStorage.getItem('last_trained_count') || '0');
+    if (ds.length >= 8 && (ds.length - last) >= 3) {
+      retrain();
+    }
+  } catch {}
+}
+
+// ---------- Location UI ----------
+function setupLocationUI(){
+  const modeSel = $("#loc-mode");
+  const manualBox = $("#manual-loc");
+  const nameI = $("#loc-name");
+  const latI = $("#loc-lat");
+  const lonI = $("#loc-lon");
+  const saveB = $("#loc-save");
+  const urlI = $("#loc-url");
+  const parseB = $("#loc-parse");
+  const openB = $("#loc-open");
+
+  // init values
+  if (modeSel) modeSel.value = state.locMode;
+  if (nameI) nameI.value = state.locationName || "";
+  if (latI && Number.isFinite(state.manualLat)) latI.value = String(state.manualLat);
+  if (lonI && Number.isFinite(state.manualLon)) lonI.value = String(state.manualLon);
+  if (manualBox) manualBox.classList.toggle("hidden", state.locMode !== 'manual');
+
+  modeSel?.addEventListener('change', (e)=>{
+    state.locMode = e.target.value === 'manual' ? 'manual' : 'auto';
+    localStorage.setItem('loc_mode', state.locMode);
+    manualBox?.classList.toggle('hidden', state.locMode !== 'manual');
+    init(true);
+  });
+
+  saveB?.addEventListener('click', ()=>{
+    const lat = Number(latI.value);
+    const lon = Number(lonI.value);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)){
+      $("#status").textContent = "Bitte gültige Koordinaten eingeben.";
+      return;
+    }
+    state.manualLat = lat; state.manualLon = lon;
+    state.locationName = (nameI.value || '').trim();
+    localStorage.setItem('manual_lat', String(lat));
+    localStorage.setItem('manual_lon', String(lon));
+    localStorage.setItem('location_name', state.locationName);
+    $("#status").textContent = "Standort gespeichert.";
+    init(true);
+  });
+
+  parseB?.addEventListener('click', ()=>{
+    const src = (urlI?.value || '').trim();
+    if (!src){ $("#status").textContent = "Bitte einen Karten-Link einfügen."; return; }
+    const parsed = parseMapLink(src);
+    if (!parsed){ $("#status").textContent = "Konnte keine Koordinaten im Link finden."; return; }
+    const { lat, lon, name } = parsed;
+    latI.value = String(lat);
+    lonI.value = String(lon);
+    if (name && !nameI.value) nameI.value = name;
+    // Persist immediately for convenience
+    state.manualLat = lat; state.manualLon = lon; state.locationName = (nameI.value||'').trim();
+    localStorage.setItem('manual_lat', String(lat));
+    localStorage.setItem('manual_lon', String(lon));
+    localStorage.setItem('location_name', state.locationName);
+    $("#status").textContent = "Koordinaten aus Link übernommen.";
+    init(true);
+  });
+
+  openB?.addEventListener('click', ()=>{
+    const lat = Number(latI.value);
+    const lon = Number(lonI.value);
+    const name = (nameI.value||'Standort').trim();
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)){
+      $("#status").textContent = "Bitte gültige Koordinaten eingeben.";
+      return;
+    }
+    const url = `https://maps.apple.com/?ll=${lat},${lon}&q=${encodeURIComponent(name)}`;
+    window.open(url, '_blank');
+  });
+}
+
+function parseMapLink(input){
+  try {
+    // Handle raw "geo:" scheme
+    if (input.startsWith('geo:')){
+      const rest = input.slice(4);
+      const [coords] = rest.split('?');
+      const [latS, lonS] = coords.split(',');
+      const lat = Number(latS), lon = Number(lonS);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
+      return null;
+    }
+    const u = new URL(input);
+    const host = u.host;
+    const qp = (k)=> u.searchParams.get(k);
+    const tryNumPair = (s)=>{
+      if (!s) return null;
+      const m = s.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+      if (m) { const lat = Number(m[1]), lon = Number(m[2]); if (Number.isFinite(lat)&&Number.isFinite(lon)) return {lat, lon}; }
+      return null;
+    };
+    // Apple Maps: ll=lat,lon or q=lat,lon
+    let pair = tryNumPair(qp('ll')) || tryNumPair(qp('q'));
+    if (pair) return { ...pair, name: qp('q') && !qp('ll') ? qp('q') : undefined };
+    // Google Maps: q=lat,lon or query=lat,lon or path contains @lat,lon,zoom
+    pair = tryNumPair(qp('q')) || tryNumPair(qp('query'));
+    if (pair) return pair;
+    const pathAt = u.pathname.match(/@(-?\d+\.\d+),(-?\d+\.\d+)(,|$)/);
+    if (pathAt) {
+      const lat = Number(pathAt[1]), lon = Number(pathAt[2]);
+      if (Number.isFinite(lat)&&Number.isFinite(lon)) return { lat, lon };
+    }
+    // OpenStreetMap: mlat/mlon or hash #map=zoom/lat/lon
+    const mlat = qp('mlat'), mlon = qp('mlon');
+    if (mlat && mlon){
+      const lat = Number(mlat), lon = Number(mlon);
+      if (Number.isFinite(lat)&&Number.isFinite(lon)) return { lat, lon };
+    }
+    if (u.hash && u.hash.startsWith('#map=')){
+      const parts = u.hash.slice(5).split('/'); // zoom/lat/lon
+      if (parts.length >= 3){
+        const lat = Number(parts[1]), lon = Number(parts[2]);
+        if (Number.isFinite(lat)&&Number.isFinite(lon)) return { lat, lon };
+      }
+    }
+    // Fallback: scan entire string for first lat,lon pair
+    const any = input.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+    if (any) {
+      const lat = Number(any[1]), lon = Number(any[2]);
+      if (Number.isFinite(lat)&&Number.isFinite(lon)) return { lat, lon };
+    }
+  } catch {}
+  return null;
+}
+
+// ---------- Settings Overlay ----------
+function openSettings(){
+  const ov = document.getElementById('settings');
+  if (!ov) return;
+  ov.classList.remove('hidden');
+}
+function closeSettings(){
+  const ov = document.getElementById('settings');
+  if (!ov) return;
+  ov.classList.add('hidden');
+}
+document.getElementById('btn-settings-close')?.addEventListener('click', closeSettings);
+// Close when clicking backdrop
+document.getElementById('settings')?.addEventListener('click', (e)=>{
+  if (e.target && e.target.id === 'settings') closeSettings();
+});
+// Close on Escape
+window.addEventListener('keydown', (e)=>{
+  if (e.key === 'Escape') { closeSettings(); hideMenu(); }
+});
+
+// setupLocationUI is invoked above so controls are ready before init()
+
+// ---------- Sparkline helpers ----------
+function makeSparkline(data, dayStr){
+  try {
+    const idxs = [];
+    for (let i=0;i<data.hourly.time.length;i++){
+      const t = data.hourly.time[i];
+      if (typeof t === 'string' && t.startsWith(dayStr)) idxs.push(i);
+    }
+    if (!idxs.length) return '';
+    const tempsApp = idxs.map(i => data.hourly.apparent_temperature?.[i] ?? data.hourly.temperature_2m?.[i] ?? 0);
+    const tempsAir = idxs.map(i => data.hourly.temperature_2m?.[i] ?? tempsApp[i] ?? 0);
+    const probs = idxs.map(i => (data.hourly.precipitation_probability?.[i] ?? 0) / 100);
+    const hours = idxs.map(i => {
+      const ts = data.hourly.time[i];
+      const hh = Number(ts.slice(11,13));
+      return Number.isFinite(hh) ? hh : new Date(ts).getHours();
+    });
+    return { svg: sparklineSVG2(tempsApp, probs, hours, [8,12,16,20]), tempsApp, tempsAir, probs, hours };
+  } catch { return { svg: '', tempsApp: [], tempsAir: [], probs: [], hours: [] }; }
+}
+
+// ---------- Pull-to-Refresh ----------
+(function setupPullToRefresh(){
+  const ptrEl = document.getElementById('ptr');
+  if (!ptrEl) return;
+  const label = ptrEl.querySelector('.ptr-label');
+  const spinner = ptrEl.querySelector('.ptr-spinner');
+  const threshold = 70;
+  let startY = 0; let pulling = false; let dy = 0; let refreshing = false;
+  const scrollEl = document.scrollingElement || document.documentElement;
+
+  function setOffset(off){
+    // Move body content down slightly
+    document.body.style.transform = off ? `translateY(${off}px)` : '';
+    ptrEl.style.height = off ? off + 'px' : '0px';
+  }
+  function onStart(e){
+    if (refreshing) return;
+    if (scrollEl.scrollTop > 0) return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    pulling = true; startY = t.clientY; dy = 0;
+    label && (label.textContent = 'Zum Aktualisieren ziehen');
+    spinner && spinner.classList.add('hidden');
+  }
+  function onMove(e){
+    if (!pulling || refreshing) return;
+    const t = e.touches && e.touches[0]; if (!t) return;
+    dy = Math.max(0, t.clientY - startY);
+    if (dy>0 && scrollEl.scrollTop <= 0) {
+      try { e.preventDefault(); } catch {}
+      const off = Math.min(100, dy * 0.5);
+      setOffset(off);
+      if (label) label.textContent = off > threshold ? 'Loslassen zum Aktualisieren' : 'Zum Aktualisieren ziehen';
+    }
+  }
+  async function onEnd(){
+    if (!pulling || refreshing) { pulling=false; return; }
+    pulling = false;
+    const off = Math.min(100, dy * 0.5);
+    if (off > threshold) {
+      refreshing = true;
+      spinner && spinner.classList.remove('hidden');
+      if (label) label.textContent = 'Aktualisiere…';
+      setOffset(56);
+      try { await init(true); } finally {
+        refreshing = false; setOffset(0);
+      }
+    } else {
+      setOffset(0);
+    }
+  }
+  window.addEventListener('touchstart', onStart, { passive: true });
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('touchend', onEnd, { passive: true });
+})();
+
+// Enhanced sparkline with hour labels
+function sparklineSVG2(temps, probs, hours, markers=[8,12,16,20], width=320, height=48){
+  const n = temps.length;
+  if (!n) return '';
+  const min = Math.min(...temps);
+  const max = Math.max(...temps);
+  const span = Math.max(1e-6, max - min);
+  const px = (i)=> n===1 ? width/2 : (i*(width-2))/(n-1) + 1; // padding 1px
+  const py = (v)=> height - ((v - min)/span)*(height-2) - 1;
+  let path = '';
+  for (let i=0;i<n;i++){
+    const x = px(i), y = py(temps[i]);
+    path += (i? ' L':'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+  }
+  // precip area (0..1)
+  let area = '';
+  if (Array.isArray(probs) && probs.length === n){
+    area = 'M'+px(0).toFixed(1)+' '+height+' ';
+    for (let i=0;i<n;i++){
+      const x=px(i), y = height - Math.min(1, Math.max(0, probs[i]))*(height-2) - 1;
+      area += 'L'+x.toFixed(1)+' '+y.toFixed(1)+' ';
+    }
+    area += 'L'+px(n-1).toFixed(1)+' '+height+' Z';
+  }
+  // marker ticks, points, labels
+  let marks = '';
+  if (Array.isArray(hours) && hours.length === n && Array.isArray(markers)){
+    for (const h of markers){
+      const idx = hours.indexOf(h);
+      if (idx >= 0){
+        const x = px(idx).toFixed(1);
+        const y = py(temps[idx]).toFixed(1);
+        const yTick0 = (height-10).toFixed(1);
+        const yTick1 = (height-1).toFixed(1);
+        marks += `<line x1="${x}" y1="${yTick0}" x2="${x}" y2="${yTick1}" stroke="#3b4560" stroke-width="1" />`;
+        marks += `<circle cx="${x}" cy="${y}" r="2.5" fill="#0b5fff" />`;
+        marks += `<text x="${x}" y="${(height-2).toFixed(1)}" fill="#9aa5b1" font-size="9" text-anchor="middle">${h}</text>`;
+      }
+    }
+  }
+  return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Mini-Verlauf Temperatur/Niederschlag">
+    ${area ? `<path d="${area}" fill="rgba(60,140,255,0.25)" stroke="none"/>` : ''}
+    ${marks}
+    <path d="${path}" fill="none" stroke="#e6edf3" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function attachSparklineHandlers(){
+  const charts = document.querySelectorAll('.sparkline');
+  charts.forEach((el)=>{
+    if (el._sparkInit) return; el._sparkInit = true;
+    const svg = el.querySelector('svg'); if (!svg) return;
+    const tempsApp = safeParseArray(el.getAttribute('data-temps-app'));
+    const tempsAir = safeParseArray(el.getAttribute('data-temps-air'));
+    const probs = safeParseArray(el.getAttribute('data-probs'));
+    const hours = safeParseArray(el.getAttribute('data-hours'));
+    if (!tempsApp.length) return;
+    const W = svg.viewBox.baseVal.width || 320;
+    const H = svg.viewBox.baseVal.height || 48;
+    const n = tempsApp.length;
+    const min = Math.min(...tempsApp);
+    const max = Math.max(...tempsApp);
+    const span = Math.max(1e-6, max - min);
+    const invIndex = (x) => {
+      const i = ((x-1)*(n-1))/(W-2);
+      return Math.max(0, Math.min(n-1, Math.round(i)));
+    };
+    const yFromTemp = (t) => H - ((t - min)/span)*(H-2) - 1;
+    const guide = document.createElement('div'); guide.className = 'spark-guide'; guide.style.display = 'none'; el.appendChild(guide);
+    const dot = document.createElement('div'); dot.className = 'spark-dot'; dot.style.display = 'none'; el.appendChild(dot);
+    const tip = document.createElement('div'); tip.className = 'spark-tip'; tip.style.display = 'none'; el.appendChild(tip);
+
+    function showAtClientX(clientX){
+      const rect = el.getBoundingClientRect();
+      const relX = clientX - rect.left;
+      const xInView = Math.max(0, Math.min(rect.width, relX));
+      const xViewBox = (xInView/rect.width) * W;
+      const idx = invIndex(xViewBox);
+      const hh = hours[idx] ?? idx;
+      const tA = tempsApp[idx];
+      const tAir = tempsAir[idx] ?? tA;
+      const prob = Math.round((probs[idx] ?? 0) * 100);
+      const yViewBox = yFromTemp(tA);
+      const yPx = (yViewBox/H) * rect.height;
+      const leftPx = Math.round(xInView);
+      guide.style.left = leftPx + 'px'; guide.style.display = '';
+      dot.style.left = leftPx + 'px'; dot.style.top = Math.round(yPx) + 'px'; dot.style.display = '';
+      tip.textContent = `${String(hh).padStart(2,'0')}:00 • gefühlt ${Math.round(tA)}°C • Luft ${Math.round(tAir)}°C • Regen ${prob}%`;
+      tip.style.left = leftPx + 'px';
+      tip.style.top = (Math.max(8, yPx - 10)) + 'px';
+      tip.style.display = '';
+    }
+    function hide(){ guide.style.display='none'; dot.style.display='none'; tip.style.display='none'; }
+
+    el.addEventListener('pointermove', (e)=>{ showAtClientX(e.clientX); });
+    el.addEventListener('pointerdown', (e)=>{ showAtClientX(e.clientX); });
+    el.addEventListener('pointerleave', hide);
+  });
+}
+
+function safeParseArray(s){ try { const a = JSON.parse(s||'[]'); return Array.isArray(a) ? a : []; } catch { return []; } }
+function sparklineSVG(temps, probs, hours, markers=[8,12,16,20], width=320, height=48){
+  const n = temps.length;
+  if (!n) return '';
+  const min = Math.min(...temps);
+  const max = Math.max(...temps);
+  const span = Math.max(1e-6, max - min);
+  const px = (i)=> n===1 ? width/2 : (i*(width-2))/(n-1) + 1; // padding 1px
+  const py = (v)=> height - ((v - min)/span)*(height-2) - 1;
+  let path = '';
+  for (let i=0;i<n;i++){
+    const x = px(i), y = py(temps[i]);
+    path += (i? ' L':'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+  }
+  // precip area (0..1)
+  let area = '';
+  if (Array.isArray(probs) && probs.length === n){
+    area = 'M'+px(0).toFixed(1)+' '+height+' ';
+    for (let i=0;i<n;i++){
+      const x=px(i), y = height - Math.min(1, Math.max(0, probs[i]))*(height-2) - 1;
+      area += 'L'+x.toFixed(1)+' '+y.toFixed(1)+' ';
+    }
+    area += 'L'+px(n-1).toFixed(1)+' '+height+' Z';
+  }
+  // marker ticks and points
+  let marks = '';
+  if (Array.isArray(hours) && hours.length === n && Array.isArray(markers)){
+    for (const h of markers){
+      const idx = hours.indexOf(h);
+      if (idx >= 0){
+        const x = px(idx).toFixed(1);
+        const y = py(temps[idx]).toFixed(1);
+        const yTick0 = (height-8).toFixed(1);
+        const yTick1 = (height-1).toFixed(1);
+        marks += `<line x1="${x}" y1="${yTick0}" x2="${x}" y2="${yTick1}" stroke="#3b4560" stroke-width="1" />`;
+        marks += `<circle cx="${x}" cy="${y}" r="2.5" fill="#0b5fff" />`;
+      }
+    }
+  }
+  return `<svg viewBox=\"0 0 ${width} ${height}\" preserveAspectRatio=\"none\" role=\"img\" aria-label=\"Mini-Verlauf Temperatur/Niederschlag\">
+    ${area ? `<path d=\"${area}\" fill=\"rgba(60,140,255,0.25)\" stroke=\"none\"/>` : ''}
+    ${marks}
+    <path d=\"${path}\" fill=\"none\" stroke=\"#e6edf3\" stroke-width=\"2\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>
+  </svg>`;
+}

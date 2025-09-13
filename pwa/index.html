@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b5fff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="manifest" href="/pwa/manifest.json" />
+    <!-- App Icons -->
+    <!-- iOS nutzt bevorzugt 180x180 -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/pwa/icons/apple-touch-icon-180.png" />
+    <!-- Zusätzliche Größen (optional) -->
+    <link rel="apple-touch-icon" sizes="192x192" href="/pwa/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/pwa/icons/icon-512.png" />
+    <!-- Favicon / Android Launcher -->
+    <link rel="icon" href="/pwa/icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-title" content="Pferdedecke" />
+    <title>Pferdedecke</title>
+    <link rel="stylesheet" href="/pwa/styles.css" />
+  </head>
+  <body>
+    <div id="ptr" aria-hidden="true"><div class="ptr-inner"><div class="ptr-spinner hidden"></div><div class="ptr-label">Zum Aktualisieren ziehen</div></div></div>
+    <header>
+      <h1><img src="/pwa/icons/icon-192.png" alt="" class="logo-img" /> Pferdedecke</h1>
+      <div class="row">
+        <button id="btn-menu" class="icon" aria-label="Menü" title="Menü">☰</button>
+      </div>
+      <div id="menu" class="menu hidden" role="menu" aria-label="App-Menü">
+        <button id="menu-settings" role="menuitem">Einstellungen</button>
+        <button id="menu-train" role="menuitem">Modell trainieren</button>
+        <button id="menu-export" role="menuitem">Backup exportieren</button>
+        <button id="menu-import" role="menuitem">Backup importieren…</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="status" class="card">Standort wird ermittelt…</section>
+
+      <section id="tomorrow" class="card hidden">
+        <h3>Morgen</h3>
+        <div id="tomorrow-forecast"></div>
+        <div id="tomorrow-reco" style="margin-top:6px"></div>
+      </section>
+
+      <section id="today" class="card hidden">
+        <h3>Heute</h3>
+        <div id="today-forecast"></div>
+        <div id="today-reco" style="margin-top:6px"></div>
+        <div style="margin-top:8px">
+          <label for="fb-select">Was wäre passender gewesen?</label>
+          <div class="row">
+            <select id="fb-select"></select>
+            <button id="fb-save">Feedback speichern</button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer>
+      <small>Quelle: Open‑Meteo • Läuft offline als PWA</small>
+    </footer>
+
+    <!-- Einstellungen Overlay -->
+    <div id="settings" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="panel">
+        <div class="panel-header">
+          <h2 id="settings-title">Einstellungen</h2>
+          <button id="btn-settings-close" class="icon" aria-label="Schließen">×</button>
+        </div>
+        <div class="panel-content">
+          <section class="card">
+            <h3>Allgemein</h3>
+            <div class="row" style="align-items: center; gap: 10px; flex-wrap: wrap;">
+              <label class="toggle">Zeitpunkt
+                <select id="time-mode">
+                  <option value="day">Tag</option>
+                  <option value="night">Nacht</option>
+                </select>
+              </label>
+            </div>
+          </section>
+          <section id="location" class="card">
+            <h3>Standort</h3>
+            <div class="row" style="align-items:center; flex-wrap: wrap; gap: 10px;">
+              <label class="toggle">Quelle
+                <select id="loc-mode">
+                  <option value="auto">Automatisch (GPS)</option>
+                  <option value="manual">Manuell</option>
+                </select>
+              </label>
+              <div id="manual-loc" class="row hidden" style="gap:8px; flex-wrap: wrap;">
+                <input id="loc-name" type="text" placeholder="Ortsname (optional)" style="min-width: 200px;" />
+                <input id="loc-lat" type="number" step="0.000001" placeholder="Breite (Lat)" style="width: 160px;" />
+                <input id="loc-lon" type="number" step="0.000001" placeholder="Länge (Lon)" style="width: 160px;" />
+                <button id="loc-save">Speichern</button>
+                <input id="loc-url" type="text" placeholder="Karten-Link einfügen (Apple/Google/OSM/geo:)" style="min-width: 320px; flex: 1 1 320px;" />
+                <button id="loc-parse" title="Koordinaten aus Link übernehmen">Aus Link übernehmen</button>
+                <button id="loc-open" title="In Karten öffnen">In Karten öffnen</button>
+              </div>
+            </div>
+            <small class="muted">Hinweis: Für einen festen Ort (z. B. „Gut Warxbüttel“) den Modus „Manuell“ wählen und Koordinaten eintragen.</small>
+          </section>
+
+          <section id="config" class="card">
+            <h3>Kategorien</h3>
+            <p class="muted">Beliebige Anzahl; Wärmegrad: niedriger = leichter.</p>
+            <div id="items"></div>
+            <div class="row" style="margin-top:8px">
+              <button id="add-item">+ Kategorie</button>
+              <button id="reset-items" title="Standard wiederherstellen">Zurücksetzen</button>
+            </div>
+            <div style="margin-top:8px">
+              <label><input type="checkbox" id="sensitive" /> Ich friere leicht</label>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js" integrity="sha384-MfWcJX3a8d7a7n2lVA2e7L7Gq5lh2l1bCt4dqgXEKD+qEwXbQmXv7B4k7UuN8sQG" crossorigin="anonymous"></script>
+    <script type="module" src="/pwa/app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/pwa/sw.js").catch(console.error);
+      }
+    </script>
+  </body>
+  <!-- Monatliches Backup-Prompt -->
+  <div id="backup-prompt" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="backup-title">
+    <div class="panel" style="max-width: 520px">
+      <div class="panel-header">
+        <h2 id="backup-title">Monatliches Backup</h2>
+        <button id="btn-backup-close" class="icon" aria-label="Schließen">×</button>
+      </div>
+      <div class="panel-content">
+        <section class="card">
+          <p>Es ist Zeit für ein monatliches Backup. Möchtest du jetzt ein Backup exportieren?</p>
+          <div class="row">
+            <button id="backup-now">Jetzt exportieren</button>
+            <button id="backup-later" class="secondary">Später</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  </html>

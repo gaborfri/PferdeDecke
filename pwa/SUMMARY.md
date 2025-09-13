@@ -8,15 +8,15 @@ Funktionen
 - Konfigurierbare Kleidungskategorien: beliebige Anzahl, Name, Wärmegrad (0–100), „wasserdicht“.
 - Sensitivität „ich friere leicht“ (+2 °C auf die gefühlte Temperatur).
 - Tägliches Feedback („Was wäre passender gewesen?“) – ein Eintrag pro Tag.
-- Optionales on‑device ML: Training mit TF.js; Modell in `localStorage`, Umschalter „ML nutzen“.
+- Optionales on‑device ML: Training mit TF.js; Modell in `localStorage`, Umschalter „ML nutzen“. TF.js ist lokal gebundled und wird offline gecached.
 - Offline‑fähig via Service Worker (nach erstem Laden; auf iPhone nur mit HTTPS‑Hosting).
 
 Dateien (Ordner `pwa/`)
-- `index.html` – App‑Shell, Manifest‑Einbindung, SW‑Registrierung, TF.js‑CDN.
+- `index.html` – App‑Shell, Manifest‑Einbindung, SW‑Registrierung, lokale TF.js‑Einbindung.
 - `styles.css` – Layout/Design.
 - `app.js` – Logik: Fetch, Feature‑Vektor, Regeln, Feedback‑Datensatz, ML‑Training/Inference, Konfiguration, Tag/Nacht.
 - `manifest.json` – PWA‑Manifest (Name, Farben, Icons, Start‑URL `/pwa/`).
-- `sw.js` – Service Worker (Cache‑First, Scope `/pwa/`).
+- `sw.js` – Service Worker (Cache‑First, Scope `/pwa/`), cached u. a. `vendor/tf.min.js`.
 - `icons/` – Platzhalter; bitte 192×192 und 512×512 PNG einfügen.
 
 Nutzung lokal
@@ -39,4 +39,3 @@ Datenschutz
 
 Grenzen (PWA)
 - Keine echten Hintergrund‑Jobs; Aktualisierung beim Öffnen. Web Push optional, erfordert Server.
-

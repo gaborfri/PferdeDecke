@@ -8,7 +8,7 @@ Funktionen
 - Konfigurierbare Kleidungskategorien: beliebige Anzahl, Name, Wärmegrad (0–100), „wasserdicht“.
 - Sensitivität „ich friere leicht“ (+2 °C auf die gefühlte Temperatur).
 - Tägliches Feedback („Was wäre passender gewesen?“) – ein Eintrag pro Tag.
-- Optionales on‑device ML: Training mit TF.js; Modell in `localStorage`, Umschalter „ML nutzen“.
+- Optionales on‑device ML: Training mit TF.js; Modell in `localStorage`, Umschalter „ML nutzen“. TF.js ist lokal gebundled und wird vom Service Worker gecached (offline nutzbar).
 - Offline‑fähig via Service Worker (nach erstem Laden; auf iPhone nur mit HTTPS‑Hosting).
 
 Dateien (Ordner `pwa/`)
@@ -27,6 +27,7 @@ Nutzung lokal
 
 Hinweis iPhone/Offline
 - Service Worker benötigt HTTPS (außer auf „localhost“). Über `http://<LAN‑IP>` funktioniert Installation, aber Offline‑Cache u. A2HS‑PWA‑Verhalten sind eingeschränkt.
+- ML offline: Da TF.js lokal liegt und gecached wird, funktioniert das ML‑Modell auch ohne Internet. Wetterdaten werden weiterhin aus dem Netz geladen, bei Offline‑Start werden die zuletzt gespeicherten Daten angezeigt.
 - Optionen für echtes HTTPS zum Testen:
   - Lokales Zertifikat (z. B. `mkcert`) + `http-server --ssl` und Zertifikat am iPhone vertrauen.
   - Temporärer HTTPS‑Tunnel (z. B. `cloudflared`, `ngrok`, `localtunnel`).

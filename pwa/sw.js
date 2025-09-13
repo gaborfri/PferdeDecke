@@ -1,9 +1,10 @@
-const CACHE = "pferdedecke-v6"; // bump to invalidate after icon updates
+const CACHE = "pferdedecke-v7"; // bump to invalidate after adding local TF.js
 const ASSETS = [
   "/pwa/",
   "/pwa/index.html",
   "/pwa/styles.css",
   "/pwa/app.js",
+  "/pwa/vendor/tf.min.js",
   "/pwa/manifest.json",
   // Icons sind optional/Platzhalter; falls vorhanden, werden sie gecached
   "/pwa/icons/icon-192.png",

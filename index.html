@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PferdeDecke – PWA</title>
+    <style>
+      :root { color-scheme: dark light; }
+      body { font-family: -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; line-height: 1.5; }
+      .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+      h1 { font-size: 1.6rem; margin: 0 0 8px; }
+      .card { border: 1px solid #d0d7de33; border-radius: 12px; padding: 16px; margin-top: 12px; }
+      .btn { display: inline-block; background: #0b5fff; color: #fff; padding: 10px 14px; border-radius: 10px; text-decoration: none; font-weight: 700; }
+      .muted { color: #6a737d; }
+      @media (prefers-color-scheme: dark) {
+        body { background: #0e1116; color: #e6edf3; }
+        .card { background: #161b22; border-color: #263042; }
+        .muted { color: #9aa5b1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>PferdeDecke – Progressive Web App</h1>
+      <p>Diese App empfiehlt eine passende Pferdedecke auf Basis der lokalen Wettervorhersage und lernt aus deinem Feedback (On‑Device‑ML).</p>
+
+      <div id="ios-hint" class="card" style="display:none">
+        <strong>Als App installieren</strong>
+        <p>Auf dem iPhone (Safari): Teilen antippen und „Zum Home‑Bildschirm“ wählen.</p>
+        <p><button id="ios-hint-close" class="btn" style="background:#2b3242; border:1px solid #3b4560">Nicht mehr anzeigen</button></p>
+      </div>
+
+      <p><a class="btn" href="./pwa/">Zur App</a></p>
+
+      <div class="card">
+        <h2>Installation als PWA</h2>
+        <ul>
+          <li>iPhone (Safari): App öffnen → Teilen → „Zum Home‑Bildschirm“.</li>
+          <li>Android (Chrome): App öffnen → Menü → „App installieren“.</li>
+          <li>Desktop: Je nach Browser „Installieren“/„Als App installieren“ auswählen.</li>
+        </ul>
+        <p class="muted">Hinweis: Offline‑Funktion und Installation erfordern HTTPS (GitHub Pages erfüllt dies). Beim ersten Laden bitte einmal online öffnen.</p>
+      </div>
+
+      <div class="card">
+        <h2>Über</h2>
+        <p>Wetterdaten von Open‑Meteo. ML mit TensorFlow.js läuft vollständig im Browser. Daten (Feedback/Modell/Einstellungen) bleiben lokal.</p>
+      </div>
+    </div>
+  </body>
+  <script>
+    (function(){
+      try {
+        const ua = navigator.userAgent || navigator.vendor || '';
+        const isIOS = /iPad|iPhone|iPod/.test(ua);
+        const isSafari = (ua.includes('Safari') && !ua.includes('CriOS') && !ua.includes('FxiOS'));
+        const inStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (('standalone' in navigator) && navigator.standalone);
+        const seen = localStorage.getItem('root_ios_hint_shown') === '1';
+        if (isIOS && isSafari && !inStandalone && !seen) {
+          const el = document.getElementById('ios-hint');
+          if (el) el.style.display = '';
+          document.getElementById('ios-hint-close')?.addEventListener('click', function(){
+            localStorage.setItem('root_ios_hint_shown','1');
+            if (el) el.style.display = 'none';
+          });
+        }
+      } catch {}
+    })();
+  </script>
+  </html>

@@ -27,6 +27,13 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// Allow page to trigger immediate activation after user confirmation
+self.addEventListener('message', (event) => {
+  if (event && event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener("fetch", (e) => {
   const { request } = e;
   if (request.method !== "GET") return;

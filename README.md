@@ -1,42 +1,43 @@
-# PferdeDecke PWA
+# PferdeDecke – PWA
 
-Ziel: Eine installierbare Web‑App (PWA) für iPhone/Browser, die anhand der lokalen Wettervorhersage Kleidungsempfehlungen macht. Alles läuft on‑device, nur die Wetterdaten (Open‑Meteo) und optional das TF.js‑CDN kommen aus dem Netz.
+Eine installierbare Web‑App (PWA), die anhand der lokalen Wettervorhersage eine Empfehlung für die passende Pferdedecke gibt. Die App nutzt ein kleines On‑Device‑Machine‑Learning‑Modell, das aus deinem Feedback lernt und die Vorschläge im Zeitverlauf personalisiert. Wetterdaten kommen von Open‑Meteo, die Berechnung läuft im Browser.
 
-Funktionen
-- Wetterdaten (stündlich+täglich): gefühlte/Luft‑Temperatur, Luftfeuchte, Wind/Böen/Richtung, Niederschlagswahrscheinlichkeit/-menge, Regenstunden, UV, Wettercode, Sonnenauf-/untergang.
-- Empfehlungen heute/morgen, Zeitpunkt konfigurierbar: Tag (12:00/08:00) oder Nacht (22:00/22:00).
-- Konfigurierbare Kleidungskategorien: beliebige Anzahl, Name, Wärmegrad (0–100), „wasserdicht“.
-- Sensitivität „ich friere leicht“ (+2 °C auf die gefühlte Temperatur).
-- Tägliches Feedback („Was wäre passender gewesen?“) – ein Eintrag pro Tag.
-- Optionales on‑device ML: Training mit TF.js; Modell in `localStorage`, Umschalter „ML nutzen“. TF.js ist lokal gebundled und wird vom Service Worker gecached (offline nutzbar).
-- Offline‑fähig via Service Worker (nach erstem Laden; auf iPhone nur mit HTTPS‑Hosting).
+**Hauptfunktionen**
+- Wetterdaten: gefühlte/Luft‑Temperatur, Wind/Böen/Richtung, Niederschlagswahrscheinlichkeit, Tages‑Niederschlagssumme, Regenstunden, UV, Wettercode.
+- Empfehlungen für heute und morgen; Zeitpunkt konfigurierbar (Tag: 12:00/08:00, Nacht: 22:00/22:00).
+- Konfigurierbare Decken‑Kategorien mit Wärmegrad (0–100) und „wasserdicht“.
+- Feedback pro Tag („Was wäre passender gewesen?“) als Trainingsdaten fürs ML‑Modell.
+- On‑Device‑ML mit TensorFlow.js (lokal gebundled), Modell wird in `localStorage` gespeichert, offline nutzbar.
+- PWA mit Service Worker: nach dem ersten Laden offlinefähig.
 
-Dateien (Ordner `pwa/`)
-- `index.html` – App‑Shell, Manifest‑Einbindung, SW‑Registrierung, TF.js‑CDN.
-- `styles.css` – Layout/Design.
-- `app.js` – Logik: Fetch, Feature‑Vektor, Regeln, Feedback‑Datensatz, ML‑Training/Inference, Konfiguration, Tag/Nacht.
-- `manifest.json` – PWA‑Manifest (Name, Farben, Icons, Start‑URL `/pwa/`).
-- `sw.js` – Service Worker (Cache‑First, Scope `/pwa/`).
-- `icons/` – Platzhalter; bitte 192×192 und 512×512 PNG einfügen.
+**Projektstruktur**
+- `pwa/index.html` – App‑Shell, Manifest, Service‑Worker‑Registrierung, Einbindung TF.js.
+- `pwa/styles.css` – Layout und UI.
+- `pwa/app.js` – App‑Logik: Wetter‑Fetch, Feature‑Engineering, Regel‑Fallback, Feedback‑Speicher, ML‑Training/Inference, Einstellungen.
+- `pwa/manifest.json` – PWA‑Manifest (Start‑URL relativ zu `/pwa/`).
+- `pwa/sw.js` – Service Worker (Cache‑Strategie, Scope `/pwa/`).
+- `pwa/icons/` – App‑Icons (192×192, 512×512 usw.).
+- `index.html` – Startseite für GitHub Pages mit Link zur PWA und Installationshinweisen.
+- `.nojekyll` – Deaktiviert Jekyll auf GitHub Pages.
 
-Nutzung lokal
-1) Statischen Server im Repo‑Root starten (wichtig, damit Pfad `/pwa/` passt), z. B.:
-   - `npx serve -l 5173 .` oder `python3 -m http.server 5173` (ohne HTTPS)
-2) Browser: `http://localhost:5173/pwa/` öffnen. Standort erlauben.
+**GitHub Pages**
+- Veröffentlicht wird die PWA im Unterordner `pwa/`. Die Root‑Seite `index.html` verlinkt dorthin und erklärt die Installation.
+- Wichtig: Pfade in der PWA sind relativ (`./...`), Manifest `start_url` ist `./`, damit der Start unter `/pwa/` korrekt funktioniert.
+
+**Lokal starten**
+1) Statischen Server im Repo‑Root starten, z. B. `npx serve -l 5173 .` oder `python3 -m http.server 5173`.
+2) Browser öffnen: `http://localhost:5173/pwa/` und Standort erlauben.
 3) iPhone im gleichen WLAN: `http://<dein-mac-ip>:5173/pwa/` in Safari öffnen → Teilen → „Zum Home‑Bildschirm“.
 
-Hinweis iPhone/Offline
-- Service Worker benötigt HTTPS (außer auf „localhost“). Über `http://<LAN‑IP>` funktioniert Installation, aber Offline‑Cache u. A2HS‑PWA‑Verhalten sind eingeschränkt.
-- ML offline: Da TF.js lokal liegt und gecached wird, funktioniert das ML‑Modell auch ohne Internet. Wetterdaten werden weiterhin aus dem Netz geladen, bei Offline‑Start werden die zuletzt gespeicherten Daten angezeigt.
-- Optionen für echtes HTTPS zum Testen:
-  - Lokales Zertifikat (z. B. `mkcert`) + `http-server --ssl` und Zertifikat am iPhone vertrauen.
-  - Temporärer HTTPS‑Tunnel (z. B. `cloudflared`, `ngrok`, `localtunnel`).
+**Hinweise (iPhone/Offline)**
+- Service Worker benötigt HTTPS (außer auf `localhost`). Über LAN‑IP ist das Offline‑Verhalten eingeschränkt.
+- TF.js ist lokal eingebunden und wird gecached; ML funktioniert offline. Wetterdaten werden online nachgeladen; offline siehst du die letzten gespeicherten Werte.
 
-Training (ML)
-- Täglich Feedback speichern. Ab ~8 Tagen „Trainieren“ klicken. „ML nutzen“ aktivieren, um Vorhersagen mit Modell zu erhalten. Fallback sind Regeln.
+**Training (ML)**
+- Sammle Feedback. Ab ca. 8 Tagen „Modell trainieren“ starten. Danach werden die Empfehlungen vom Modell priorisiert; Fallback sind Regeln.
 
-Datenschutz
-- Feedback, Modell und Einstellungen liegen im Browser `localStorage`. Kein externer Speicher. Netzverkehr: Open‑Meteo API + TF.js‑CDN.
+**Datenschutz**
+- Feedback, Modell und Einstellungen bleiben lokal im Browser (`localStorage`). Extern nur Open‑Meteo API‑Aufrufe.
 
-Grenzen (PWA)
-- Keine echten Hintergrund‑Jobs; Aktualisierung beim Öffnen. Web Push optional, erfordert Server.
+**Bekannte Details/UX**
+- Regen‑Chip zeigt Prozent, ggf. Regenstunden und Tages‑Summe. Nummer und Einheit bleiben nun zusammen in einer Zeile (kein Umbruch zwischen Zahl und „mm“/„h“).

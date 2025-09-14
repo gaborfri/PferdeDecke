@@ -90,6 +90,7 @@ document.addEventListener('click', (e)=>{
 });
 // Menu actions
 document.getElementById('menu-settings')?.addEventListener('click', ()=>{ hideMenu(); openSettings(); });
+document.getElementById('menu-info')?.addEventListener('click', ()=>{ hideMenu(); openInfo(); });
 document.getElementById('menu-train')?.addEventListener('click', ()=>{ hideMenu(); retrain(); });
 document.getElementById('menu-export')?.addEventListener('click', ()=>{ hideMenu(); exportBackup(); });
 document.getElementById('menu-import')?.addEventListener('click', ()=>{ hideMenu(); importBackup(); });
@@ -335,8 +336,8 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
   // Rain chip (compact, conditional hours/sum)
   const prob = Math.round((f.pprob||0)*100);
   const parts = [`<span class="val">${prob}%</span>`];
-  if (rainHours >= 0.3) parts.push(`⌛ ~ ${Math.round(rainHours*10)/10} h`);
-  if (rainSum >= 0.2) parts.push(`☔ ${Math.round(rainSum*10)/10} mm`);
+  if (rainHours >= 0.3) parts.push(`⌛ ~ ${Math.round(rainHours*10)/10}&nbsp;h`);
+  if (rainSum >= 0.2) parts.push(`☔ ${Math.round(rainSum*10)/10}&nbsp;mm`);
   const chipRain = `<div class="metric">💧 <div>${parts.join(' • ')}</div></div>`;
   // UV chip only (humidity removed)
   const uvShow = (uvMax >= 1 && state.timeMode === 'day');
@@ -712,6 +713,8 @@ async function init(force = false) {
     render(data);
     // Check auto-train after data available
     checkAutoRetrain();
+    // Soft prompt for iOS PWA install on first visit (after initial render)
+    setTimeout(maybeShowIOSInstallHint, 900);
   } catch (e) {
     console.error(e);
     showToast(`Fehler: ${e.message}`, 'error', 4000);
@@ -722,10 +725,14 @@ renderItems();
 setupFeedback();
 setupLocationUI();
 loadModelIfAny().finally(()=>init());
+setupSWUpdateWatch();
 
 // ---------- Monthly backup prompt ----------
 function checkMonthlyBackup(){
   try {
+    const ih = document.getElementById('install-hint');
+    const up = document.getElementById('update-prompt');
+    if ((ih && !ih.classList.contains('hidden')) || (up && !up.classList.contains('hidden'))) return;
     const last = localStorage.getItem('last_backup');
     const lastT = last ? Date.parse(last) : 0;
     const days = (Date.now() - lastT) / 86400000;
@@ -759,6 +766,59 @@ function checkAutoRetrain(){
     if (ds.length >= 8 && (ds.length - last) >= 3) {
       retrain();
     }
+  } catch {}
+}
+
+// ---------- Service Worker Update Flow ----------
+function setupSWUpdateWatch(){
+  if (!('serviceWorker' in navigator)) return;
+  // If a registration exists, attach listeners; otherwise try later
+  const attach = (reg)=>{
+    if (!reg) return;
+    // Check immediately for a waiting worker (e.g., previous load)
+    if (reg.waiting) {
+      showUpdatePrompt(reg);
+    }
+    // Listen for new installing workers
+    reg.addEventListener('updatefound', ()=>{
+      const sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener('statechange', ()=>{
+        if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdatePrompt(reg);
+        }
+      });
+    });
+    // Optionally, poll occasionally
+    setInterval(()=>{ reg.update().catch(()=>{}); }, 60*60*1000);
+  };
+  navigator.serviceWorker.getRegistration().then((reg)=>{
+    if (reg) attach(reg);
+  });
+  // Also attach once ready
+  navigator.serviceWorker.ready.then(attach).catch(()=>{});
+  // Reload page when the controller changes after skipWaiting
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    // Ensure full reload to get fresh assets
+    window.location.reload();
+  });
+}
+
+function showUpdatePrompt(reg){
+  try {
+    const ov = document.getElementById('update-prompt');
+    if (!ov) return;
+    ov.classList.remove('hidden');
+    const accept = ()=>{
+      ov.classList.add('hidden');
+      const sw = reg.waiting || reg.installing;
+      if (sw) sw.postMessage({ type: 'SKIP_WAITING' });
+    };
+    const later = ()=>{ ov.classList.add('hidden'); };
+    document.getElementById('update-now')?.addEventListener('click', accept, { once: true });
+    document.getElementById('update-later')?.addEventListener('click', later, { once: true });
+    document.getElementById('btn-update-close')?.addEventListener('click', later, { once: true });
+    ov.addEventListener('click', (e)=>{ if (e.target && e.target.id === 'update-prompt') later(); }, { once: true });
   } catch {}
 }
 
@@ -909,6 +969,42 @@ document.getElementById('settings')?.addEventListener('click', (e)=>{
 window.addEventListener('keydown', (e)=>{
   if (e.key === 'Escape') { closeSettings(); hideMenu(); }
 });
+
+// ---------- Info Overlay ----------
+function openInfo(){ document.getElementById('info')?.classList.remove('hidden'); }
+function closeInfo(){ document.getElementById('info')?.classList.add('hidden'); }
+document.getElementById('btn-info-close')?.addEventListener('click', closeInfo);
+document.getElementById('info')?.addEventListener('click', (e)=>{ if (e.target && e.target.id === 'info') closeInfo(); });
+
+// ---------- iOS Install Hint ----------
+function isIOS(){
+  const ua = navigator.userAgent || navigator.vendor || '';
+  return /iPad|iPhone|iPod/.test(ua);
+}
+function isStandalone(){
+  const mql = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+  const iosStandalone = 'standalone' in navigator && navigator.standalone;
+  return !!(mql || iosStandalone);
+}
+function isSafari(){
+  const ua = navigator.userAgent || '';
+  return ua.includes('Safari') && !ua.includes('CriOS') && !ua.includes('FxiOS');
+}
+function maybeShowIOSInstallHint(){
+  try {
+    if (!isIOS() || !isSafari() || isStandalone()) return;
+    if (localStorage.getItem('ios_install_hint_shown') === '1') return;
+    const ov = document.getElementById('install-hint');
+    ov?.classList.remove('hidden');
+  } catch {}
+}
+function closeInstallHint(mark=true){
+  document.getElementById('install-hint')?.classList.add('hidden');
+  if (mark) try { localStorage.setItem('ios_install_hint_shown','1'); } catch {}
+}
+document.getElementById('btn-install-close')?.addEventListener('click', ()=> closeInstallHint(true));
+document.getElementById('install-ok')?.addEventListener('click', ()=> closeInstallHint(true));
+document.getElementById('install-hint')?.addEventListener('click', (e)=>{ if (e.target && e.target.id === 'install-hint') closeInstallHint(false); });
 
 // setupLocationUI is invoked above so controls are ready before init()
 

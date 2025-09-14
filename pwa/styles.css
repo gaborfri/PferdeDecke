@@ -125,8 +125,8 @@ button[data-fb="cold"], button[data-fb="warm"] { background: #2b3242; color: var
 .sparkline .spark-dot { position: absolute; width: 8px; height: 8px; margin-left: -4px; margin-top: -4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(11,95,255,0.3); pointer-events: none; }
 .sparkline .spark-tip { position: absolute; transform: translate(-50%, -100%); background: #10151c; color: var(--fg); border: 1px solid #263042; border-radius: 8px; padding: 4px 6px; font-size: 12px; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
 .forecast-icon {
-  flex: 0 0 clamp(120px, 18vw, 200px);
-  font-size: clamp(96px, 15vw, 196px);
+  flex: 0 0 clamp(100px, 16vw, 200px);
+  font-size: clamp(88px, 14vw, 196px);
   line-height: 1;
   text-align: center;
   white-space: nowrap;

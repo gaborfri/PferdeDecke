@@ -28,6 +28,7 @@
       </div>
       <div id="menu" class="menu hidden" role="menu" aria-label="App-Menü">
         <button id="menu-settings" role="menuitem">Einstellungen</button>
+        <button id="menu-info" role="menuitem">Info</button>
         <button id="menu-train" role="menuitem">Modell trainieren</button>
         <button id="menu-export" role="menuitem">Backup exportieren</button>
         <button id="menu-import" role="menuitem">Backup importieren…</button>
@@ -112,6 +113,60 @@
             </div>
             <div style="margin-top:8px">
               <label><input type="checkbox" id="sensitive" /> Ich friere leicht</label>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info Overlay -->
+    <div id="info" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="info-title">
+      <div class="panel" style="max-width: 720px">
+        <div class="panel-header">
+          <h2 id="info-title">Info</h2>
+          <button id="btn-info-close" class="icon" aria-label="Schließen">×</button>
+        </div>
+        <div class="panel-content">
+          <section class="card">
+            <h3>Über diese App</h3>
+            <p>Die App empfiehlt eine passende Pferdedecke anhand der lokalen Wettervorhersage und lernt aus deinem täglichen Feedback. Die Berechnung erfolgt lokal im Browser (On‑Device‑ML mit TensorFlow.js); Daten bleiben auf deinem Gerät.</p>
+            <p class="muted">Wetterdaten: Open‑Meteo · Offline nach dem ersten Laden nutzbar.</p>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- iOS Install-Hinweis Overlay -->
+    <div id="install-hint" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="install-title">
+      <div class="panel" style="max-width: 560px">
+        <div class="panel-header">
+          <h2 id="install-title">Als App installieren</h2>
+          <button id="btn-install-close" class="icon" aria-label="Schließen">×</button>
+        </div>
+        <div class="panel-content">
+          <section class="card">
+            <p>Auf dem iPhone (Safari): Teilen antippen und „Zum Home‑Bildschirm“ wählen, um die PWA zu installieren.</p>
+            <div class="row" style="justify-content: flex-end; margin-top: 8px">
+              <button id="install-ok">Verstanden</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Update Prompt Overlay -->
+    <div id="update-prompt" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="update-title">
+      <div class="panel" style="max-width: 520px">
+        <div class="panel-header">
+          <h2 id="update-title">Neue Version verfügbar</h2>
+          <button id="btn-update-close" class="icon" aria-label="Schließen">×</button>
+        </div>
+        <div class="panel-content">
+          <section class="card">
+            <p>Es ist eine neue App-Version verfügbar. Jetzt aktualisieren?</p>
+            <div class="row">
+              <button id="update-now">Aktualisieren</button>
+              <button id="update-later" class="secondary">Später</button>
             </div>
           </section>
         </div>

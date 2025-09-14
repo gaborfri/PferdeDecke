@@ -327,21 +327,21 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
   const tFeel = f.temp + state.sensitivity;
   const tAir = f.tAir ?? f.temp;
   const showBothTemps = Math.abs(tAir - tFeel) >= 1;
-  const chipTemp = `<div class="metric">🌡️ <div><span class="val">${fmt(tFeel, "°C")}</span>${showBothTemps ? ` • Luft ${fmt(tAir, "°C")}` : ""}</div></div>`;
+  const chipTemp = `<div class="metric">🌡️ <div class="nowrap"><span class="val">${fmt(tFeel, "°C")}</span>${showBothTemps ? ` • Luft ${fmt(tAir, "°C")}` : ""}</div></div>`;
   // Wind chip (km/h), gusts only if +5 km/h
   const wKmh = Math.round((f.wind||0) * 3.6);
   const gKmh = Math.round(((f.gust ?? f.wind) || 0) * 3.6);
   const gustText = (gKmh - wKmh) >= 5 ? ` • Böen ${gKmh}` : '';
-  const chipWind = `<div class="metric"><span class="icon-w" style="transform: rotate(${wdir}deg)">➤</span><div><span class="val">${wKmh} km/h</span>${gustText}</div></div>`;
+  const chipWind = `<div class="metric"><span class="icon-w" style="transform: rotate(${wdir}deg)">➤</span><div class="nowrap"><span class="val">${wKmh} km/h</span>${gustText}</div></div>`;
   // Rain chip (compact, conditional hours/sum)
   const prob = Math.round((f.pprob||0)*100);
   const parts = [`<span class="val">${prob}%</span>`];
   if (rainHours >= 0.3) parts.push(`⌛ ~ ${Math.round(rainHours*10)/10}&nbsp;h`);
   if (rainSum >= 0.2) parts.push(`☔ ${Math.round(rainSum*10)/10}&nbsp;mm`);
-  const chipRain = `<div class="metric">💧 <div>${parts.join(' • ')}</div></div>`;
+  const chipRain = `<div class="metric metric-rain">💧 <div class="nowrap">${parts.join(' • ')}</div></div>`;
   // UV chip only (humidity removed)
   const uvShow = (uvMax >= 1 && state.timeMode === 'day');
-  const chipUv = uvShow ? `<div class="metric">☀️ <div><span class="val">UV ${Math.round(uvMax)}</span></div></div>` : '';
+  const chipUv = uvShow ? `<div class="metric">☀️ <div class="nowrap"><span class="val">UV ${Math.round(uvMax)}</span></div></div>` : '';
 
   const chips = [chipTemp, chipWind, chipRain, chipUv].filter(Boolean).join('');
   return `

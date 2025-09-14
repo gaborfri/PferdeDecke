@@ -144,7 +144,13 @@ button[data-fb="cold"], button[data-fb="warm"] { background: #2b3242; color: var
 .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 6px; }
 .metric { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #1c2230; border: 1px solid #2c3a52; border-radius: 10px; }
 .metric .val { font-weight: 700; }
+.metric .nowrap { white-space: nowrap; }
 .icon-w { display: inline-block; width: 1em; text-align: center; transform-origin: 50% 50%; }
+
+/* Let rain metric span full row on narrow screens to avoid wrapping its content */
+@media (max-width: 560px) {
+  .metrics .metric-rain { grid-column: 1 / -1; }
+}
 
 /* Toasts */
 .toaster {

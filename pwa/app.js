@@ -291,6 +291,7 @@ function refreshDerived(){
   // Render tomorrow
   $("#tomorrow").classList.remove("hidden");
   $("#tomorrow-forecast").innerHTML = forecastDetailsHTML(state.lastData, state.ctx.idxTomorrow, fTomorrow, 1);
+  try { adjustMetricSpans(document.getElementById('tomorrow')); } catch {}
   state.recoTomorrowId = selTomorrow.id;
   const baseTomorrow = state.timeMode === 'night' ? 'Morgen Nacht' : 'Morgen';
   const hTomorrow = document.querySelector('#tomorrow h3');
@@ -299,6 +300,7 @@ function refreshDerived(){
   // Render today + feedback select
   $("#today").classList.remove("hidden");
   $("#today-forecast").innerHTML = forecastDetailsHTML(state.lastData, state.ctx.idxToday, fToday, 0);
+  try { adjustMetricSpans(document.getElementById('today')); } catch {}
   state.recoTodayId = selToday.id;
   const baseToday = state.timeMode === 'night' ? 'Heute Nacht' : 'Heute';
   const hToday = document.querySelector('#today h3');
@@ -336,7 +338,7 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
   // Rain chip (compact, conditional hours/sum)
   const prob = Math.round((f.pprob||0)*100);
   const parts = [`<span class="val">${prob}%</span>`];
-  if (rainHours >= 0.3) parts.push(`⌛ ~ ${Math.round(rainHours*10)/10}&nbsp;h`);
+  if (rainHours >= 0.3) parts.push(`${Math.round(rainHours*10)/10}&nbsp;h`);
   if (rainSum >= 0.2) parts.push(`☔ ${Math.round(rainSum*10)/10}&nbsp;mm`);
   const chipRain = `<div class="metric metric-rain">💧 <div class="nowrap">${parts.join(' • ')}</div></div>`;
   // UV chip only (humidity removed)
@@ -1184,6 +1186,27 @@ function attachSparklineHandlers(){
     el.addEventListener('pointerleave', hide);
   });
 }
+
+// Automatically widen metric chips whose content overflows
+function adjustMetricSpans(scope){
+  try {
+    const root = scope || document;
+    const ms = root.querySelectorAll('.metrics .metric');
+    ms.forEach(m => {
+      m.classList.remove('wide');
+      const content = m.querySelector('.nowrap');
+      if (content && content.scrollWidth > content.clientWidth + 1) {
+        m.classList.add('wide');
+      }
+    });
+  } catch {}
+}
+
+let _resizeTimer;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(()=> adjustMetricSpans(), 120);
+});
 
 function safeParseArray(s){ try { const a = JSON.parse(s||'[]'); return Array.isArray(a) ? a : []; } catch { return []; } }
 function sparklineSVG(temps, probs, hours, markers=[8,12,16,20], width=320, height=48){

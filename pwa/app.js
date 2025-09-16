@@ -52,6 +52,10 @@ const state = {
   locationName: (localStorage.getItem("location_name") || DEFAULT_LOC.name),
   model: null,
   modelMeta: null,
+  recoTodayId: null,
+  recoTomorrowId: null,
+  feedbackChoice: null,
+  feedbackDay: null,
 };
 
 // ---------- UI Binds ----------
@@ -73,20 +77,16 @@ $("#time-mode").addEventListener("change", (e)=>{
 });
 
 // Pull-to-refresh ersetzt den Aktualisieren-Button
-// Menu toggle
+// Menu toggle via floating button
+const menuOverlay = document.getElementById('menu-overlay');
 document.getElementById("btn-menu")?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  const m = document.getElementById('menu');
-  m?.classList.toggle('hidden');
+  e.preventDefault();
+  menuOverlay?.classList.remove('hidden');
+  menuOverlay?.querySelector('button[role="menuitem"]')?.focus();
 });
-// Close menu on outside click
-document.addEventListener('click', (e)=>{
-  const m = document.getElementById('menu');
-  if (!m) return;
-  if (!m.classList.contains('hidden')) {
-    const within = m.contains(e.target) || document.getElementById('btn-menu')?.contains(e.target);
-    if (!within) m.classList.add('hidden');
-  }
+document.getElementById('btn-menu-close')?.addEventListener('click', () => hideMenu());
+menuOverlay?.addEventListener('click', (e) => {
+  if (e.target === menuOverlay) hideMenu();
 });
 // Menu actions
 document.getElementById('menu-settings')?.addEventListener('click', ()=>{ hideMenu(); openSettings(); });
@@ -95,7 +95,12 @@ document.getElementById('menu-train')?.addEventListener('click', ()=>{ hideMenu(
 document.getElementById('menu-export')?.addEventListener('click', ()=>{ hideMenu(); exportBackup(); });
 document.getElementById('menu-import')?.addEventListener('click', ()=>{ hideMenu(); importBackup(); });
 
-function hideMenu(){ document.getElementById('menu')?.classList.add('hidden'); }
+function hideMenu(){
+  const overlay = document.getElementById('menu-overlay');
+  if (!overlay) return;
+  overlay.classList.add('hidden');
+  document.getElementById('btn-menu')?.focus();
+}
 
 async function getLocation() {
   // Manual override
@@ -305,7 +310,12 @@ function refreshDerived(){
   const baseToday = state.timeMode === 'night' ? 'Heute Nacht' : 'Heute';
   const hToday = document.querySelector('#today h3');
   if (hToday) hToday.innerHTML = `${baseToday} · <span class=\"muted\">Empfehlung: ${selToday.name}</span>`;
-  renderFeedbackSelect(items, selToday.id);
+  const todayKey = new Date().toISOString().slice(0,10);
+  if (state.feedbackDay !== todayKey) {
+    state.feedbackDay = todayKey;
+    state.feedbackChoice = selToday.id;
+  }
+  renderFeedbackOptions(items, selToday.id);
   attachSparklineHandlers();
 }
 
@@ -339,8 +349,8 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
   const prob = Math.round((f.pprob||0)*100);
   const parts = [`<span class="val">${prob}%</span>`];
   if (rainHours >= 0.3) parts.push(`${Math.round(rainHours*10)/10}&nbsp;h`);
-  if (rainSum >= 0.2) parts.push(`☔ ${Math.round(rainSum*10)/10}&nbsp;mm`);
-  const chipRain = `<div class="metric metric-rain">💧 <div class="nowrap">${parts.join(' • ')}</div></div>`;
+  if (rainSum >= 0.2) parts.push(`${Math.round(rainSum*10)/10}&nbsp;mm`);
+  const chipRain = `<div class="metric metric-rain">☔️ <div class="nowrap">${parts.join(' • ')}</div></div>`;
   // UV chip only (humidity removed)
   const uvShow = (uvMax >= 1 && state.timeMode === 'day');
   const chipUv = uvShow ? `<div class="metric">☀️ <div class="nowrap"><span class="val">UV ${Math.round(uvMax)}</span></div></div>` : '';
@@ -351,51 +361,108 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
       <div class="forecast-text">
         <div><strong>${label}</strong></div>
         <div class="metrics">${chips}</div>
-        <div class="sparkline" role="img" aria-label="Tagesverlauf" data-temps-app='${JSON.stringify(spark.tempsApp)}' data-temps-air='${JSON.stringify(spark.tempsAir)}' data-probs='${JSON.stringify(spark.probs)}' data-hours='${JSON.stringify(spark.hours)}'>${spark.svg}</div>
+        <div class="sparkline" role="img" aria-label="Tagesverlauf" data-temps-app='${JSON.stringify(spark.tempsApp)}' data-temps-air='${JSON.stringify(spark.tempsAir)}' data-precip='${JSON.stringify(spark.precips)}' data-probs='${JSON.stringify(spark.probs)}' data-hours='${JSON.stringify(spark.hours)}'>${spark.svg}</div>
       </div>
       <div class="forecast-icon" aria-label="${label}" title="${label}">${icon}</div>
     </div>
   `;
 }
 
-function renderFeedbackSelect(items, suggestedId){
-  const sel = $("#fb-select");
-  sel.innerHTML = "";
-  for (const it of items){
-    const opt = document.createElement("option");
-    opt.value = it.id; opt.textContent = it.name;
-    if (it.id === suggestedId) opt.selected = true;
-    sel.appendChild(opt);
+function renderFeedbackOptions(items, suggestedId){
+  const host = document.getElementById('fb-chip-scroll');
+  if (!host) return;
+  host.innerHTML = '';
+  const fallback = items.find(it => it.id === suggestedId)?.id || items[0]?.id || '';
+  if (!state.feedbackChoice || !items.some(it => it.id === state.feedbackChoice)) {
+    state.feedbackChoice = fallback;
+  }
+  const selected = state.feedbackChoice || fallback;
+  items.forEach((it) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.textContent = it.name;
+    chip.dataset.value = it.id;
+    chip.id = `fb-chip-${it.id}`;
+    chip.setAttribute('role', 'option');
+    chip.tabIndex = -1;
+    host.appendChild(chip);
+  });
+  updateFeedbackChips(selected, false);
+}
+
+function updateFeedbackChips(selectedId, ensureVisible=false){
+  const host = document.getElementById('fb-chip-scroll');
+  if (!host) return;
+  host.dataset.selected = selectedId || '';
+  host.querySelectorAll('button[data-value]').forEach((btn) => {
+    const active = btn.dataset.value === selectedId;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.tabIndex = active ? 0 : -1;
+  });
+  const activeEl = host.querySelector('button[data-value].active');
+  if (activeEl) {
+    host.setAttribute('aria-activedescendant', activeEl.id);
+    if (ensureVisible) {
+      try { activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); } catch {}
+    }
+  } else {
+    host.removeAttribute('aria-activedescendant');
   }
 }
 
+function handleFeedbackSelection(labelId, ensureVisible=true){
+  if (!labelId) return;
+  state.feedbackChoice = labelId;
+  state.feedbackDay = new Date().toISOString().slice(0,10);
+  updateFeedbackChips(labelId, ensureVisible);
+  recordFeedback(labelId);
+}
+
+function recordFeedback(labelId){
+  if (!state.lastData || !state.ctx) return;
+  const feat = toVector(state.ctx.fToday);
+  const todayKey = new Date().toISOString().slice(0,10);
+  const sample = { date: todayKey, x: feat, y: labelId };
+  const ds = loadDataset();
+  const idx = ds.findIndex(s => s.date === todayKey);
+  if (idx >= 0) ds[idx] = sample; else ds.push(sample);
+  saveDataset(ds);
+  const item = state.items.find(it => it.id === labelId);
+  const isReco = labelId === state.recoTodayId;
+  const name = item?.name || 'Auswahl';
+  showToast(isReco ? 'Danke! Empfehlung passt.' : `Feedback gespeichert: ${name}.`, 'ok', 2200);
+  checkAutoRetrain();
+}
+
 function setupFeedback() {
-  $("#fb-save").addEventListener("click", () => {
-    if (!state.lastData || !state.ctx) return;
-    const labelId = $("#fb-select").value;
-    const feat = toVector(state.ctx.fToday);
-    const todayKey = new Date().toISOString().slice(0,10);
-    const sample = { date: todayKey, x: feat, y: labelId };
-    const ds = loadDataset();
-    const idx = ds.findIndex(s => s.date === todayKey);
-    if (idx >= 0) ds[idx] = sample; else ds.push(sample);
-    saveDataset(ds);
-  showToast(`Feedback gespeichert für ${todayKey}.`, 'ok', 2200);
-    checkAutoRetrain();
+  const host = document.getElementById('fb-chip-scroll');
+  if (!host || host._feedbackInit) return;
+  host.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-value]');
+    if (!btn) return;
+    const val = btn.dataset.value;
+    handleFeedbackSelection(val, true);
   });
-  $("#fb-ok")?.addEventListener("click", () => {
-    if (!state.lastData || !state.ctx) return;
-    const labelId = state.recoTodayId || $("#fb-select").value;
-    const feat = toVector(state.ctx.fToday);
-    const todayKey = new Date().toISOString().slice(0,10);
-    const sample = { date: todayKey, x: feat, y: labelId };
-    const ds = loadDataset();
-    const idx = ds.findIndex(s => s.date === todayKey);
-    if (idx >= 0) ds[idx] = sample; else ds.push(sample);
-    saveDataset(ds);
-    showToast('Danke! Empfehlung passt.', 'ok', 2000);
-    checkAutoRetrain();
+  host.addEventListener('keydown', (e) => {
+    if (!['ArrowRight','ArrowLeft','Home','End','Enter',' '].includes(e.key)) return;
+    const chips = Array.from(host.querySelectorAll('button[data-value]'));
+    if (!chips.length) return;
+    const currentVal = host.dataset.selected;
+    let idx = chips.findIndex(btn => btn.dataset.value === currentVal);
+    if (idx < 0) idx = 0;
+    let nextIdx = idx;
+    if (e.key === 'ArrowRight') nextIdx = Math.min(chips.length - 1, idx + 1);
+    if (e.key === 'ArrowLeft') nextIdx = Math.max(0, idx - 1);
+    if (e.key === 'Home') nextIdx = 0;
+    if (e.key === 'End') nextIdx = chips.length - 1;
+    const next = chips[nextIdx];
+    if (!next) return;
+    e.preventDefault();
+    const val = next.dataset.value;
+    handleFeedbackSelection(val, true);
   });
+  host._feedbackInit = true;
 }
 
 // ---------- Items Config UI ----------
@@ -1021,14 +1088,15 @@ function makeSparkline(data, dayStr){
     if (!idxs.length) return '';
     const tempsApp = idxs.map(i => data.hourly.apparent_temperature?.[i] ?? data.hourly.temperature_2m?.[i] ?? 0);
     const tempsAir = idxs.map(i => data.hourly.temperature_2m?.[i] ?? tempsApp[i] ?? 0);
+    const precips = idxs.map(i => data.hourly.precipitation?.[i] ?? 0);
     const probs = idxs.map(i => (data.hourly.precipitation_probability?.[i] ?? 0) / 100);
     const hours = idxs.map(i => {
       const ts = data.hourly.time[i];
       const hh = Number(ts.slice(11,13));
       return Number.isFinite(hh) ? hh : new Date(ts).getHours();
     });
-    return { svg: sparklineSVG2(tempsApp, probs, hours, [8,12,16,20]), tempsApp, tempsAir, probs, hours };
-  } catch { return { svg: '', tempsApp: [], tempsAir: [], probs: [], hours: [] }; }
+    return { svg: sparklineSVG2(tempsApp, precips, probs, hours), tempsApp, tempsAir, precips, probs, hours };
+  } catch { return { svg: '', tempsApp: [], tempsAir: [], precips: [], probs: [], hours: [] }; }
 }
 
 // ---------- Pull-to-Refresh ----------
@@ -1087,50 +1155,86 @@ function makeSparkline(data, dayStr){
   window.addEventListener('touchend', onEnd, { passive: true });
 })();
 
-// Enhanced sparkline with hour labels
-function sparklineSVG2(temps, probs, hours, markers=[8,12,16,20], width=320, height=48){
+// Enhanced sparkline with dual axis + 4h grid
+function sparklineSVG2(temps, precips, probs, hours, width=320, height=60){
   const n = temps.length;
   if (!n) return '';
+  const padTop = 6;
+  const padBottom = 16;
+  const chartHeight = Math.max(1, height - padTop - padBottom);
   const min = Math.min(...temps);
   const max = Math.max(...temps);
   const span = Math.max(1e-6, max - min);
-  const px = (i)=> n===1 ? width/2 : (i*(width-2))/(n-1) + 1; // padding 1px
-  const py = (v)=> height - ((v - min)/span)*(height-2) - 1;
-  let path = '';
+  const rainMax = Math.max(0, ...(Array.isArray(precips) ? precips : []));
+  const rainScale = Math.max(0.2, rainMax);
+  const px = (i)=> n===1 ? width/2 : (i*(width-2))/(n-1) + 1;
+  const pyTemp = (v)=> padTop + (1 - ((v - min)/span)) * chartHeight;
+  const pyRain = (v)=> padTop + (1 - Math.min(1, v / rainScale)) * chartHeight;
+
+  let tempPath = '';
   for (let i=0;i<n;i++){
-    const x = px(i), y = py(temps[i]);
-    path += (i? ' L':'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    const x = px(i), y = pyTemp(temps[i]);
+    tempPath += (i? ' L':'M') + x.toFixed(1) + ' ' + y.toFixed(1);
   }
-  // precip area (0..1)
-  let area = '';
-  if (Array.isArray(probs) && probs.length === n){
-    area = 'M'+px(0).toFixed(1)+' '+height+' ';
+
+  let rainArea = '';
+  if (Array.isArray(precips) && precips.length === n){
+    const baseY = (padTop + chartHeight).toFixed(1);
+    rainArea = `M${px(0).toFixed(1)} ${baseY} `;
     for (let i=0;i<n;i++){
-      const x=px(i), y = height - Math.min(1, Math.max(0, probs[i]))*(height-2) - 1;
-      area += 'L'+x.toFixed(1)+' '+y.toFixed(1)+' ';
+      const x=px(i), y = pyRain(precips[i]);
+      rainArea += `L${x.toFixed(1)} ${y.toFixed(1)} `;
     }
-    area += 'L'+px(n-1).toFixed(1)+' '+height+' Z';
+    rainArea += `L${px(n-1).toFixed(1)} ${baseY} Z`;
   }
-  // marker ticks, points, labels
-  let marks = '';
-  if (Array.isArray(hours) && hours.length === n && Array.isArray(markers)){
-    for (const h of markers){
-      const idx = hours.indexOf(h);
-      if (idx >= 0){
-        const x = px(idx).toFixed(1);
-        const y = py(temps[idx]).toFixed(1);
-        const yTick0 = (height-10).toFixed(1);
-        const yTick1 = (height-1).toFixed(1);
-        marks += `<line x1="${x}" y1="${yTick0}" x2="${x}" y2="${yTick1}" stroke="#3b4560" stroke-width="1" />`;
-        marks += `<circle cx="${x}" cy="${y}" r="2.5" fill="#0b5fff" />`;
-        marks += `<text x="${x}" y="${(height-2).toFixed(1)}" fill="#9aa5b1" font-size="9" text-anchor="middle">${h}</text>`;
+
+  let grid = '';
+  if (Array.isArray(hours) && hours.length){
+    const first = hours[0];
+    const last = hours[hours.length-1];
+    const startHour = first % 4 === 0 ? first : first + (4 - (first % 4));
+    const toX = (hour)=>{
+      if (!Array.isArray(hours) || !hours.length) return px(0);
+      const idx = hours.indexOf(hour);
+      if (idx >= 0) return px(idx);
+      for (let i=1;i<hours.length;i++){
+        const prev = hours[i-1];
+        const curr = hours[i];
+        if (hour >= prev && hour <= curr){
+          const ratio = (hour - prev) / Math.max(1, curr - prev);
+          const xPrev = px(i-1);
+          return xPrev + (px(i) - xPrev) * ratio;
+        }
       }
+      return hour < hours[0] ? px(0) : px(hours.length-1);
+    };
+    for (let h = startHour; h <= last; h += 4){
+      const x = toX(h).toFixed(1);
+      grid += `<line x1="${x}" y1="${padTop}" x2="${x}" y2="${(padTop+chartHeight).toFixed(1)}" stroke="rgba(59,69,96,0.45)" stroke-width="1" stroke-dasharray="2 4" />`;
+      grid += `<text x="${x}" y="${(height-4).toFixed(1)}" fill="#9aa5b1" font-size="9" text-anchor="middle">${String(h).padStart(2,'0')}h</text>`;
     }
   }
+
+  const tempLabels = `<text x="4" y="${(padTop+8).toFixed(1)}" fill="#9aa5b1" font-size="9" text-anchor="start">${Math.round(max)}°</text>` +
+    `<text x="4" y="${(height-4).toFixed(1)}" fill="#9aa5b1" font-size="9" text-anchor="start">${Math.round(min)}°</text>`;
+  const rainLabels = rainMax > 0 ? (
+    `<text x="${(width-4).toFixed(1)}" y="${(padTop+8).toFixed(1)}" fill="#9aa5b1" font-size="9" text-anchor="end">${(Math.round(rainScale*10)/10).toFixed(1)} mm/h</text>` +
+    `<text x="${(width-4).toFixed(1)}" y="${(height-4).toFixed(1)}" fill="#9aa5b1" font-size="9" text-anchor="end">0</text>`
+  ) : '';
+
+  const hiIdx = temps.indexOf(max);
+  const loIdx = temps.indexOf(min);
+  const highlights = [];
+  if (hiIdx >= 0) highlights.push(`<circle cx="${px(hiIdx).toFixed(1)}" cy="${pyTemp(max).toFixed(1)}" r="2.8" fill="#0b5fff" />`);
+  if (loIdx >= 0 && loIdx !== hiIdx) highlights.push(`<circle cx="${px(loIdx).toFixed(1)}" cy="${pyTemp(min).toFixed(1)}" r="2.8" fill="#0b5fff" />`);
+
   return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Mini-Verlauf Temperatur/Niederschlag">
-    ${area ? `<path d="${area}" fill="rgba(60,140,255,0.25)" stroke="none"/>` : ''}
-    ${marks}
-    <path d="${path}" fill="none" stroke="#e6edf3" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${grid}
+    ${rainArea ? `<path d="${rainArea}" fill="rgba(60,140,255,0.3)" stroke="none"/>` : ''}
+    <path d="${tempPath}" fill="none" stroke="#e6edf3" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${highlights.join('')}
+    ${tempLabels}
+    ${rainLabels}
   </svg>`;
 }
 
@@ -1141,25 +1245,30 @@ function attachSparklineHandlers(){
     const svg = el.querySelector('svg'); if (!svg) return;
     const tempsApp = safeParseArray(el.getAttribute('data-temps-app'));
     const tempsAir = safeParseArray(el.getAttribute('data-temps-air'));
+    const precips = safeParseArray(el.getAttribute('data-precip'));
     const probs = safeParseArray(el.getAttribute('data-probs'));
     const hours = safeParseArray(el.getAttribute('data-hours'));
     if (!tempsApp.length) return;
     const W = svg.viewBox.baseVal.width || 320;
-    const H = svg.viewBox.baseVal.height || 48;
+    const H = svg.viewBox.baseVal.height || 60;
     const n = tempsApp.length;
     const min = Math.min(...tempsApp);
     const max = Math.max(...tempsApp);
     const span = Math.max(1e-6, max - min);
+    const padTop = 6;
+    const padBottom = 16;
+    const chartHeight = Math.max(1, H - padTop - padBottom);
     const invIndex = (x) => {
       const i = ((x-1)*(n-1))/(W-2);
       return Math.max(0, Math.min(n-1, Math.round(i)));
     };
-    const yFromTemp = (t) => H - ((t - min)/span)*(H-2) - 1;
+    const yFromTemp = (t) => padTop + (1 - ((t - min)/span)) * chartHeight;
     const guide = document.createElement('div'); guide.className = 'spark-guide'; guide.style.display = 'none'; el.appendChild(guide);
     const dot = document.createElement('div'); dot.className = 'spark-dot'; dot.style.display = 'none'; el.appendChild(dot);
     const tip = document.createElement('div'); tip.className = 'spark-tip'; tip.style.display = 'none'; el.appendChild(tip);
 
-    function showAtClientX(clientX){
+    function showAtPointer(ev){
+      const clientX = ev.clientX;
       const rect = el.getBoundingClientRect();
       const relX = clientX - rect.left;
       const xInView = Math.max(0, Math.min(rect.width, relX));
@@ -1169,21 +1278,25 @@ function attachSparklineHandlers(){
       const tA = tempsApp[idx];
       const tAir = tempsAir[idx] ?? tA;
       const prob = Math.round((probs[idx] ?? 0) * 100);
+      const mm = Math.round(((precips[idx] ?? 0) * 10)) / 10;
       const yViewBox = yFromTemp(tA);
       const yPx = (yViewBox/H) * rect.height;
       const leftPx = Math.round(xInView);
       guide.style.left = leftPx + 'px'; guide.style.display = '';
       dot.style.left = leftPx + 'px'; dot.style.top = Math.round(yPx) + 'px'; dot.style.display = '';
-      tip.textContent = `${String(hh).padStart(2,'0')}:00 • gefühlt ${Math.round(tA)}°C • Luft ${Math.round(tAir)}°C • Regen ${prob}%`;
+      const mmText = mm > 0 ? ` • ${mm.toFixed(1)} mm/h` : '';
+      tip.textContent = `${String(hh).padStart(2,'0')}:00 • gefühlt ${Math.round(tA)}°C • Luft ${Math.round(tAir)}°C • Regen ${prob}%${mmText}`;
       tip.style.left = leftPx + 'px';
-      tip.style.top = (Math.max(8, yPx - 10)) + 'px';
+      const verticalOffset = ev.pointerType === 'touch' ? 48 : 20;
+      tip.style.top = (Math.max(8, yPx - verticalOffset)) + 'px';
       tip.style.display = '';
     }
     function hide(){ guide.style.display='none'; dot.style.display='none'; tip.style.display='none'; }
 
-    el.addEventListener('pointermove', (e)=>{ showAtClientX(e.clientX); });
-    el.addEventListener('pointerdown', (e)=>{ showAtClientX(e.clientX); });
+    el.addEventListener('pointermove', (e)=>{ showAtPointer(e); });
+    el.addEventListener('pointerdown', (e)=>{ showAtPointer(e); });
     el.addEventListener('pointerleave', hide);
+    el.addEventListener('pointerup', hide);
   });
 }
 
@@ -1209,47 +1322,3 @@ window.addEventListener('resize', ()=>{
 });
 
 function safeParseArray(s){ try { const a = JSON.parse(s||'[]'); return Array.isArray(a) ? a : []; } catch { return []; } }
-function sparklineSVG(temps, probs, hours, markers=[8,12,16,20], width=320, height=48){
-  const n = temps.length;
-  if (!n) return '';
-  const min = Math.min(...temps);
-  const max = Math.max(...temps);
-  const span = Math.max(1e-6, max - min);
-  const px = (i)=> n===1 ? width/2 : (i*(width-2))/(n-1) + 1; // padding 1px
-  const py = (v)=> height - ((v - min)/span)*(height-2) - 1;
-  let path = '';
-  for (let i=0;i<n;i++){
-    const x = px(i), y = py(temps[i]);
-    path += (i? ' L':'M') + x.toFixed(1) + ' ' + y.toFixed(1);
-  }
-  // precip area (0..1)
-  let area = '';
-  if (Array.isArray(probs) && probs.length === n){
-    area = 'M'+px(0).toFixed(1)+' '+height+' ';
-    for (let i=0;i<n;i++){
-      const x=px(i), y = height - Math.min(1, Math.max(0, probs[i]))*(height-2) - 1;
-      area += 'L'+x.toFixed(1)+' '+y.toFixed(1)+' ';
-    }
-    area += 'L'+px(n-1).toFixed(1)+' '+height+' Z';
-  }
-  // marker ticks and points
-  let marks = '';
-  if (Array.isArray(hours) && hours.length === n && Array.isArray(markers)){
-    for (const h of markers){
-      const idx = hours.indexOf(h);
-      if (idx >= 0){
-        const x = px(idx).toFixed(1);
-        const y = py(temps[idx]).toFixed(1);
-        const yTick0 = (height-8).toFixed(1);
-        const yTick1 = (height-1).toFixed(1);
-        marks += `<line x1="${x}" y1="${yTick0}" x2="${x}" y2="${yTick1}" stroke="#3b4560" stroke-width="1" />`;
-        marks += `<circle cx="${x}" cy="${y}" r="2.5" fill="#0b5fff" />`;
-      }
-    }
-  }
-  return `<svg viewBox=\"0 0 ${width} ${height}\" preserveAspectRatio=\"none\" role=\"img\" aria-label=\"Mini-Verlauf Temperatur/Niederschlag\">
-    ${area ? `<path d=\"${area}\" fill=\"rgba(60,140,255,0.25)\" stroke=\"none\"/>` : ''}
-    ${marks}
-    <path d=\"${path}\" fill=\"none\" stroke=\"#e6edf3\" stroke-width=\"2\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>
-  </svg>`;
-}

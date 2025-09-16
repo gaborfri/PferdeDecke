@@ -21,19 +21,8 @@
   </head>
   <body>
     <div id="ptr" aria-hidden="true"><div class="ptr-inner"><div class="ptr-spinner hidden"></div><div class="ptr-label">Zum Aktualisieren ziehen</div></div></div>
-    <header>
-      <h1><img src="icons/icon-192.png" alt="" class="logo-img" /> Pferdedecke</h1>
-      <div class="row">
-        <button id="btn-menu" class="icon" aria-label="Menü" title="Menü">☰</button>
-      </div>
-      <div id="menu" class="menu hidden" role="menu" aria-label="App-Menü">
-        <button id="menu-settings" role="menuitem">Einstellungen</button>
-        <button id="menu-train" role="menuitem">Modell trainieren</button>
-        <button id="menu-export" role="menuitem">Backup exportieren</button>
-        <button id="menu-import" role="menuitem">Backup importieren…</button>
-        <button id="menu-info" role="menuitem">Info</button>
-      </div>
-    </header>
+    <img src="icons/icon-192.png" alt="Pferdedecke" class="fab-logo" aria-hidden="true" />
+    <button id="btn-menu" class="fab" aria-label="Menü" title="Menü"><span aria-hidden="true">☰</span></button>
 
     <main>
       
@@ -47,20 +36,27 @@
         <h3>Heute</h3>
         <div id="today-forecast"></div>
         <div style="margin-top:8px">
-          <label for="fb-select">Was wäre passender gewesen?</label>
-          <div class="row">
-            <select id="fb-select"></select>
-            <button id="fb-ok" title="Empfehlung passt">Passt</button>
-            <button id="fb-save">Feedback speichern</button>
+          <label for="fb-chip-scroll" class="sr-only">Klicke oder tippe auf die gewünschte Kategorie, die Empfehlung ist markiert.</label>
+          <div class="row feedback-row">
+            <div id="fb-chip-scroll" class="chip-scroll" role="listbox" aria-label="Kategorien – Tippen, um Feedback zu geben" title="Tippe auf die passende Kategorie; die Empfehlung ist markiert." tabindex="0"></div>
           </div>
         </div>
       </section>
 
     </main>
-
-    <footer>
-      <small>Quelle: Open‑Meteo • Läuft offline als PWA</small>
-    </footer>
+    <div id="menu-overlay" class="overlay hidden menu-overlay" role="dialog" aria-modal="true" aria-label="App-Menü">
+      <div class="menu-container">
+        <button id="btn-menu-close" class="menu-close" aria-label="Schließen">×</button>
+        <img src="icons/icon-192.png" alt="Pferdedecke" class="menu-logo" />
+        <div class="menu-actions" role="menu">
+          <button id="menu-settings" role="menuitem">Einstellungen</button>
+          <button id="menu-train" role="menuitem">Modell trainieren</button>
+          <button id="menu-export" role="menuitem">Backup exportieren</button>
+          <button id="menu-import" role="menuitem">Backup importieren…</button>
+          <button id="menu-info" role="menuitem">Info</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Einstellungen Overlay -->
     <div id="settings" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">

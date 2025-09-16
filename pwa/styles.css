@@ -32,7 +32,7 @@ body {
 html, body { overscroll-behavior-y: contain; }
 .fab {
   position: fixed;
-  top: calc(16px + env(safe-area-inset-top));
+  top: calc(16px + env(safe-area-inset-top) + 40px);
   right: 16px;
   width: 54px;
   height: 54px;
@@ -58,8 +58,9 @@ html, body { overscroll-behavior-y: contain; }
 }
 .fab-logo {
   position: fixed;
-  top: calc(16px + env(safe-area-inset-top));
-  left: 16px;
+  top: calc(8px + env(safe-area-inset-top));
+  right: calc(8px + env(safe-area-inset-right));
+  transform: translate(6%, -6%);
   width: 54px;
   height: 54px;
   border-radius: 16px;

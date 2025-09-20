@@ -31,36 +31,29 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 html, body { overscroll-behavior-y: contain; }
 .fab {
-  position: fixed;
-  top: calc(16px + env(safe-area-inset-top) + 40px);
-  right: 16px;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  border: 1px solid #3b4560;
-  background: rgba(22, 27, 34, 0.9);
+  position: static;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
   color: var(--fg);
-  display: grid;
-  place-items: center;
-  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
   font-weight: 700;
-  z-index: 1400;
-  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
-  transition: transform .06s ease, background .15s ease, color .15s ease;
+  cursor: pointer;
+  transition: transform .06s ease, color .15s ease;
 }
 .fab:active { transform: translateY(1px); }
 .fab span { pointer-events: none; }
 @supports (backdrop-filter: blur(10px)) {
   .fab {
-    background: rgba(22, 27, 34, 0.62);
-    backdrop-filter: blur(12px);
+    background: transparent;
+    backdrop-filter: none;
   }
 }
 .fab-logo {
-  position: fixed;
-  top: calc(8px + env(safe-area-inset-top));
-  right: calc(8px + env(safe-area-inset-right));
-  transform: translate(6%, -6%);
+  position: static;
   width: 54px;
   height: 54px;
   border-radius: 16px;
@@ -68,7 +61,6 @@ html, body { overscroll-behavior-y: contain; }
   background: rgba(19, 24, 33, 0.85);
   padding: 10px;
   object-fit: contain;
-  z-index: 1400;
   pointer-events: none;
 }
 @supports (backdrop-filter: blur(10px)) {
@@ -76,6 +68,17 @@ html, body { overscroll-behavior-y: contain; }
     background: rgba(19, 24, 33, 0.6);
     backdrop-filter: blur(10px);
   }
+}
+
+.fab-cluster {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 12px);
+  right: calc(env(safe-area-inset-right) + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  z-index: 1400;
 }
 
 .menu-overlay {

@@ -32,7 +32,7 @@ Hinweis iPhone/Offline
   - Temporärer HTTPS‑Tunnel (z. B. `cloudflared`, `ngrok`, `localtunnel`).
 
 Training (ML)
-- Täglich Feedback speichern. Ab ~8 Tagen „Trainieren“ klicken. „ML nutzen“ aktivieren, um Vorhersagen mit Modell zu erhalten. Fallback sind Regeln.
+- Täglich Feedback speichern. Nach ~8 Tagen startet das automatische Retraining, sobald drei neue Feedback-Tage hinzugekommen sind. Danach liefert das Modell die Empfehlungen, Regeln dienen als Fallback.
 
 Datenschutz
 - Feedback, Modell und Einstellungen liegen im Browser `localStorage`. Kein externer Speicher. Netzverkehr: Open‑Meteo API + TF.js‑CDN.

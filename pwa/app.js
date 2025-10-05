@@ -43,7 +43,6 @@ const DEFAULT_LOC = { lat: 52.37424617149301, lon: 10.436978270056711, name: "Gu
 const state = {
   sensitivity: Number(localStorage.getItem("sensitivity")) || 0,
   items: loadItems(),
-  useML: true,
   timeMode: localStorage.getItem("time_mode") === "night" ? "night" : "day",
   // location settings
   locMode: (localStorage.getItem("loc_mode") === "manual") ? "manual" : (localStorage.getItem("loc_mode") === "auto" ? "auto" : "manual"),
@@ -65,8 +64,6 @@ $("#sensitive").addEventListener("change", (e) => {
   localStorage.setItem("sensitivity", String(state.sensitivity));
   if (state.lastData) refreshDerived();
 });
-
-// ML ist immer aktiv; keine UI nötig
 
 // day/night selector
 $("#time-mode").value = state.timeMode;
@@ -91,7 +88,6 @@ menuOverlay?.addEventListener('click', (e) => {
 // Menu actions
 document.getElementById('menu-settings')?.addEventListener('click', ()=>{ hideMenu(); openSettings(); });
 document.getElementById('menu-info')?.addEventListener('click', ()=>{ hideMenu(); openInfo(); });
-document.getElementById('menu-train')?.addEventListener('click', ()=>{ hideMenu(); retrain(); });
 document.getElementById('menu-export')?.addEventListener('click', ()=>{ hideMenu(); exportBackup(); });
 document.getElementById('menu-import')?.addEventListener('click', ()=>{ hideMenu(); importBackup(); });
 
@@ -639,7 +635,7 @@ function alignVec(x, targetLen){
 }
 
 function selectItem(feat, items){
-  if (state.useML && state.model && state.modelMeta && state.modelMeta.items) {
+  if (state.model && state.modelMeta && state.modelMeta.items) {
     try {
       const vec = toVector(feat);
       const aligned = alignVec(vec, state.modelMeta.mean.length);

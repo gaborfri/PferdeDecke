@@ -34,7 +34,7 @@ Eine installierbare Web‑App (PWA), die anhand der lokalen Wettervorhersage ein
 - TF.js ist lokal eingebunden und wird gecached; ML funktioniert offline. Wetterdaten werden online nachgeladen; offline siehst du die letzten gespeicherten Werte.
 
 **Training (ML)**
-- Sammle Feedback. Ab ca. 8 Tagen „Modell trainieren“ starten. Danach werden die Empfehlungen vom Modell priorisiert; Fallback sind Regeln.
+- Sammle Feedback. Ab ca. 8 Tagen retrainiert die App automatisch nach jeweils drei neuen Feedback-Tagen. Das ML-Modell priorisiert danach die Empfehlungen; Fallback bleiben die Regeln.
 
 **Datenschutz**
 - Feedback, Modell und Einstellungen bleiben lokal im Browser (`localStorage`). Extern nur Open‑Meteo API‑Aufrufe.

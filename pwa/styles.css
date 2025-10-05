@@ -151,15 +151,20 @@ html, body { overscroll-behavior-y: contain; }
 }
 main {
   max-width: 720px;
-  margin: 0 auto; padding: 12px; gap: 12px;
+  margin: 0 auto;
+  padding: 10px 12px calc(20px + env(safe-area-inset-bottom));
+  gap: 10px;
   display: grid;
 }
 .card {
   background: var(--card);
   border: 1px solid #263042;
   border-radius: 16px;
-  padding: 16px;
+  padding: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+}
+.card > h3 {
+  margin: 0 0 10px;
 }
 .hidden { display: none; }
 
@@ -180,11 +185,11 @@ main {
   align-items: center;
   gap: 6px;
   overflow-x: auto;
-  padding: 6px 8px;
+  padding: 4px 6px;
   border-radius: 16px;
   background: rgba(20, 26, 36, 0.82);
   border: 1px solid #263042;
-  min-height: 48px;
+  min-height: 44px;
   max-width: 100%;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
@@ -233,7 +238,7 @@ button { cursor: pointer; }
   min-width: 0;
 }
 .sparkline { margin-top: 8px; opacity: 0.95; position: relative; }
-.sparkline svg { width: 100%; height: 60px; display: block; }
+.sparkline svg { width: 100%; height: 54px; display: block; }
 .sparkline .spark-guide { position: absolute; top: 0; bottom: 0; width: 1px; background: #3b4560; pointer-events: none; }
 .sparkline .spark-dot { position: absolute; width: 8px; height: 8px; margin-left: -4px; margin-top: -4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(11,95,255,0.3); pointer-events: none; }
 .sparkline .spark-tip { position: absolute; transform: translate(-50%, -100%); background: #10151c; color: var(--fg); border: 1px solid #263042; border-radius: 8px; padding: 4px 6px; font-size: 12px; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 20px rgba(0,0,0,0.4); }

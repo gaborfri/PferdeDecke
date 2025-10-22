@@ -19,12 +19,16 @@ const fmt = (n, unit) => `${Math.round(n)}${unit}`;
 // ---------- Config & State ----------
 // Kategorien-Voreinstellung für Pferdedecken (Skalierung der Gramm nach ~0..100)
 const DEFAULT_ITEMS = [
-  { id: cryptoRandomId(), name: "keine", warmth: 0, waterproof: false },
-  { id: cryptoRandomId(), name: "50g", warmth: 20, waterproof: false },
-  { id: cryptoRandomId(), name: "100g", warmth: 40, waterproof: false },
-  { id: cryptoRandomId(), name: "150g", warmth: 60, waterproof: false },
-  { id: cryptoRandomId(), name: "250g", warmth: 100, waterproof: false },
+  { id: "default-none", name: "keine", warmth: 0, waterproof: false },
+  { id: "default-50g", name: "50g", warmth: 20, waterproof: false },
+  { id: "default-100g", name: "100g", warmth: 40, waterproof: false },
+  { id: "default-150g", name: "150g", warmth: 60, waterproof: false },
+  { id: "default-250g", name: "250g", warmth: 100, waterproof: false },
 ];
+
+function cloneItems(items) {
+  return items.map((it) => ({ ...it }));
+}
 
 function cryptoRandomId(){
   try { return crypto.randomUUID(); } catch { return "id-" + Math.random().toString(36).slice(2); }
@@ -32,9 +36,18 @@ function cryptoRandomId(){
 
 function loadItems(){
   const raw = localStorage.getItem("clothing_items");
-  if (!raw) return DEFAULT_ITEMS.slice();
-  try { const parsed = JSON.parse(raw); if (Array.isArray(parsed) && parsed.length) return parsed; } catch {}
-  return DEFAULT_ITEMS.slice();
+  if (!raw) {
+    const defaults = cloneItems(DEFAULT_ITEMS);
+    saveItems(defaults);
+    return defaults;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+  } catch {}
+  const defaults = cloneItems(DEFAULT_ITEMS);
+  saveItems(defaults);
+  return defaults;
 }
 function saveItems(items){ localStorage.setItem("clothing_items", JSON.stringify(items)); }
 
@@ -419,7 +432,13 @@ function recordFeedback(labelId){
   if (!state.lastData || !state.ctx) return;
   const feat = toVector(state.ctx.fToday);
   const todayKey = new Date().toISOString().slice(0,10);
-  const sample = { date: todayKey, x: feat, y: labelId };
+  const sample = {
+    date: todayKey,
+    x: feat,
+    y: labelId,
+    name: item?.name || null,
+    warmth: item?.warmth ?? null,
+  };
   const ds = loadDataset();
   const idx = ds.findIndex(s => s.date === todayKey);
   if (idx >= 0) ds[idx] = sample; else ds.push(sample);
@@ -488,14 +507,52 @@ $("#add-item").addEventListener("click", ()=>{
 });
 $("#reset-items").addEventListener("click", ()=>{
   if (!confirm("Kategorien auf Standard zurücksetzen?")) return;
-  state.items = DEFAULT_ITEMS.slice(); saveItems(state.items); renderItems(); refreshDerived();
+  state.items = cloneItems(DEFAULT_ITEMS); saveItems(state.items); renderItems(); refreshDerived();
 });
 
 // ---------- Dataset storage ----------
 function loadDataset(){
-  try { return JSON.parse(localStorage.getItem("dataset")||"[]"); } catch { return []; }
+  let raw;
+  try {
+    raw = JSON.parse(localStorage.getItem("dataset") || "[]");
+  } catch {
+    return [];
+  }
+  const entries = Array.isArray(raw) ? raw.slice() : [];
+  const items = (state && Array.isArray(state.items)) ? state.items : [];
+  if (!items.length) return entries;
+  const idMap = new Map(items.map((it) => [it.id, it]));
+  const nameMap = new Map(items.map((it) => [String(it.name || "").trim().toLowerCase(), it]));
+  const cleaned = [];
+  let changed = false;
+  for (const sample of entries) {
+    if (!sample || typeof sample !== "object") { changed = true; continue; }
+    let id = sample.y;
+    let item = idMap.get(id);
+    if (!item) {
+      const fallbackName = typeof sample.name === "string" ? sample.name.trim().toLowerCase() : "";
+      if (fallbackName && nameMap.has(fallbackName)) {
+        item = nameMap.get(fallbackName);
+        id = item.id;
+        sample.y = id;
+        changed = true;
+      } else {
+        changed = true;
+        continue;
+      }
+    }
+    if (!Array.isArray(sample.x)) { changed = true; continue; }
+    sample.name = item.name;
+    sample.warmth = item.warmth;
+    cleaned.push(sample);
+  }
+  if (changed) saveDataset(cleaned);
+  return cleaned;
 }
-function saveDataset(ds){ localStorage.setItem("dataset", JSON.stringify(ds)); }
+function saveDataset(ds){
+  if (!Array.isArray(ds)) return;
+  localStorage.setItem("dataset", JSON.stringify(ds));
+}
 
 // ---------- Export / Import (Feedback) ----------
 async function exportBackup(){
@@ -710,7 +767,7 @@ async function loadModelIfAny(){
 
 async function retrain(){
   const ds = loadDataset();
-  if (ds.length < 8) { showToast('Zu wenig Feedback (min. 8 Tage)', 'warn', 2800); return; }
+  if (ds.length < 8) { showToast('Zu wenig Feedback (min. 8 Tage)', 'warn', 2800); return false; }
   const items = state.items;
   const idToIdx = new Map(items.map((it,i)=>[it.id,i]));
   const X = []; const Y = [];
@@ -721,7 +778,7 @@ async function retrain(){
     X.push(alignVec(x, targetLen));
     Y.push(idToIdx.get(s.y));
   }
-  if (X.length < 4) { showToast('Nicht genug gültige Daten', 'warn', 2800); return; }
+  if (X.length < 4) { showToast('Nicht genug gültige Daten', 'warn', 2800); return false; }
   const mean = new Array(X[0].length).fill(0);
   const std = new Array(X[0].length).fill(0);
   for (let j=0;j<mean.length;j++){ mean[j] = X.reduce((a,r)=>a+r[j],0)/X.length; }
@@ -745,6 +802,7 @@ async function retrain(){
   // Merke Trainingsstand (für Auto-Retrain)
   try { localStorage.setItem('last_trained_count', String(ds.length)); } catch {}
   refreshDerived();
+  return true;
 }
 
 // ---------- Init ----------
@@ -824,14 +882,19 @@ document.getElementById('btn-backup-close')?.addEventListener('click', ()=>{
 setTimeout(checkMonthlyBackup, 1500);
 
 // ---------- Auto-Retrain ----------
-function checkAutoRetrain(){
+async function checkAutoRetrain(){
   try {
     const ds = loadDataset();
     const last = Number(localStorage.getItem('last_trained_count') || '0');
     if (ds.length >= 8 && (ds.length - last) >= 3) {
-      retrain();
+      const ok = await retrain();
+      if (!ok) {
+        try { localStorage.setItem('last_trained_count', String(ds.length)); } catch {}
+      }
     }
-  } catch {}
+  } catch (e) {
+    console.warn('Auto-Retrain fehlgeschlagen', e);
+  }
 }
 
 // ---------- Service Worker Update Flow ----------

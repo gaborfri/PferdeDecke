@@ -16,6 +16,49 @@ function showToast(message, variant = 'info', duration = 3000) {
 }
 const fmt = (n, unit) => `${Math.round(n)}${unit}`;
 
+const dateFmt = new Intl.DateTimeFormat('de-DE', {
+  weekday: 'short',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric'
+});
+
+function todayKey(){
+  return new Date().toISOString().slice(0,10);
+}
+
+function formatHistoryDate(iso){
+  try {
+    const parts = iso.split('-').map(Number);
+    const date = new Date(Date.UTC(parts[0], (parts[1]||1)-1, parts[2]||1));
+    return dateFmt.format(date);
+  } catch {
+    return iso;
+  }
+}
+
+function windDirFromSinCos(sin, cos){
+  const rad = Math.atan2(sin, cos);
+  const deg = (rad * 180 / Math.PI + 360) % 360;
+  return Math.round(deg);
+}
+
+function vectorToContext(vec){
+  if (!Array.isArray(vec) || vec.length < 8) return null;
+  const [temp, tAir, wind, gust, pprob, isRain, rh, uv, wsin, wcos] = vec;
+  return {
+    temp,
+    tAir: tAir ?? temp,
+    wind,
+    gust: gust ?? wind,
+    pprob,
+    isRain: Boolean(isRain),
+    rh,
+    uv,
+    wdir: windDirFromSinCos(wsin ?? 0, wcos ?? 1)
+  };
+}
+
 // ---------- Config & State ----------
 // Kategorien-Voreinstellung für Pferdedecken (Skalierung der Gramm nach ~0..100)
 const DEFAULT_ITEMS = [
@@ -68,6 +111,10 @@ const state = {
   recoTomorrowId: null,
   feedbackChoice: null,
   feedbackDay: null,
+  viewDate: new Date().toISOString().slice(0,10),
+  todayHeading: '',
+  todayMarkup: '',
+  recoTodayName: '',
 };
 
 // ---------- UI Binds ----------
@@ -311,21 +358,29 @@ function refreshDerived(){
   const hTomorrow = document.querySelector('#tomorrow h3');
   if (hTomorrow) hTomorrow.innerHTML = `${baseTomorrow} · <span class="muted">Empfehlung: ${selTomorrow.name}</span>`;
 
-  // Render today + feedback select
+  // Store today's context for history navigation
   $("#today").classList.remove("hidden");
-  $("#today-forecast").innerHTML = forecastDetailsHTML(state.lastData, state.ctx.idxToday, fToday, 0);
-  try { adjustMetricSpans(document.getElementById('today')); } catch {}
   state.recoTodayId = selToday.id;
+  state.recoTodayName = selToday.name;
+  state.todayMarkup = forecastDetailsHTML(state.lastData, state.ctx.idxToday, fToday, 0);
   const baseToday = state.timeMode === 'night' ? 'Heute Nacht' : 'Heute';
-  const hToday = document.querySelector('#today h3');
-  if (hToday) hToday.innerHTML = `${baseToday} · <span class=\"muted\">Empfehlung: ${selToday.name}</span>`;
-  const todayKey = new Date().toISOString().slice(0,10);
-  if (state.feedbackDay !== todayKey) {
-    state.feedbackDay = todayKey;
-    state.feedbackChoice = selToday.id;
+  state.todayHeading = `${baseToday} · <span class=\"muted\">Empfehlung: ${selToday.name}</span>`;
+  const todayIso = todayKey();
+  if (state.viewDate === todayIso) {
+    state.feedbackDay = todayIso;
+    if (!state.feedbackChoice || !items.some((it) => it.id === state.feedbackChoice)) {
+      let choice = selToday.id;
+      try {
+        const existing = loadDataset().find((s) => s && s.date === todayIso);
+        if (existing && items.some((it) => it.id === existing.y)) {
+          choice = existing.y;
+        }
+      } catch {}
+      state.feedbackChoice = choice;
+    }
   }
-  renderFeedbackOptions(items, selToday.id);
-  attachSparklineHandlers();
+
+  updateViewForDate(state.viewDate);
 }
 
 function forecastDetailsHTML(data, idx, f, dayOffset){
@@ -420,34 +475,225 @@ function updateFeedbackChips(selectedId, ensureVisible=false){
   }
 }
 
+function renderHistoricalSummary(entry){
+  const ctx = vectorToContext(entry?.x || null);
+  const metrics = [];
+  const items = state.items || [];
+  const recorded = entry?.name || items.find((it) => it.id === entry?.y)?.name || '—';
+  if (ctx) {
+    const feel = Number.isFinite(ctx.temp) ? Math.round(ctx.temp) : null;
+    const air = Number.isFinite(ctx.tAir) ? Math.round(ctx.tAir) : feel;
+    const showBoth = feel !== null && air !== null && Math.abs(feel - air) >= 1;
+    const feelLabel = feel !== null ? `${feel}°C` : '–';
+    const airLabel = air !== null ? `${air}°C` : '–';
+    const windKmh = Math.round((ctx.wind || 0) * 3.6);
+    const gustKmh = Math.round((ctx.gust || 0) * 3.6);
+    const gustText = gustKmh - windKmh >= 5 ? ` • Böen ${gustKmh}` : '';
+    const arrows = ['↑','↗','→','↘','↓','↙','←','↖'];
+    const dir = arrows[Math.round(((ctx.wdir || 0) % 360) / 45) % 8];
+    const rainProb = Math.round((ctx.pprob || 0) * 100);
+    const hum = Math.round((ctx.rh || 0) * 100);
+    metrics.push(`<div class="metric">🌡️ <div class="nowrap"><span class="val">${feelLabel}</span>${showBoth ? ` • Luft ${airLabel}` : ''}</div></div>`);
+    metrics.push(`<div class="metric"><span class="icon-w" style="transform: rotate(${ctx.wdir || 0}deg)">➤</span><div class="nowrap"><span class="val">${windKmh} km/h</span>${gustText} • ${dir}</div></div>`);
+    metrics.push(`<div class="metric">☔️ <div class="nowrap"><span class="val">${rainProb}%</span>${ctx.isRain ? ' • Regen' : ''}</div></div>`);
+    if (Number.isFinite(hum) && hum > 0) {
+      metrics.push(`<div class="metric">💧 <div class="nowrap"><span class="val">${hum}%</span> Feuchte</div></div>`);
+    }
+    if (Number.isFinite(ctx.uv) && ctx.uv >= 0.5) {
+      metrics.push(`<div class="metric">☀️ <div class="nowrap"><span class="val">UV ${Math.round(ctx.uv)}</span></div></div>`);
+    }
+  }
+  const metricsHtml = metrics.length ? `<div class="metrics history-metrics">${metrics.join('')}</div>` : `<div class="history-note">Keine Wetterdetails gespeichert.</div>`;
+  return `
+    <div class="history-summary">
+      <p class="history-note">Gespeichertes Feedback: <strong>${recorded}</strong></p>
+      ${metricsHtml}
+      <p class="history-hint">Hinweis: Nach links oder rechts wischen, um Tage zu wechseln.</p>
+    </div>
+  `;
+}
+
+function getAvailableDates(){
+  const dates = new Set([todayKey()]);
+  try {
+    for (const sample of loadDataset()) {
+      if (sample && sample.date) dates.add(sample.date);
+    }
+  } catch {}
+  return Array.from(dates).sort((a,b)=> b.localeCompare(a));
+}
+
+function updateViewForDate(dateIso){
+  const todayIso = todayKey();
+  const view = dateIso || todayIso;
+  state.viewDate = view;
+  const card = document.getElementById('today');
+  const forecast = document.getElementById('today-forecast');
+  const heading = card?.querySelector('h3');
+  if (!card || !forecast) return;
+
+  if (view === todayIso) {
+    const headingHtml = state.todayHeading || (state.timeMode === 'night' ? 'Heute Nacht' : 'Heute');
+    if (heading) heading.innerHTML = headingHtml;
+    forecast.innerHTML = state.todayMarkup || '';
+    try { adjustMetricSpans(card); } catch {}
+    attachSparklineHandlers();
+    card.classList.remove('history-view');
+    card.dataset.viewDate = todayIso;
+    state.feedbackDay = todayIso;
+    if (!state.feedbackChoice || !state.items.some((it) => it.id === state.feedbackChoice)) {
+      state.feedbackChoice = state.recoTodayId || state.items[0]?.id || null;
+    }
+    renderFeedbackOptions(state.items, state.recoTodayId || state.feedbackChoice);
+    return;
+  }
+
+  const ds = loadDataset();
+  const entry = ds.find((s) => s && s.date === view);
+  if (!entry) {
+    showToast('Keine gespeicherten Daten für diesen Tag.', 'warn', 2400);
+    state.viewDate = todayIso;
+    updateViewForDate(todayIso);
+    return;
+  }
+
+  const items = state.items;
+  const fallbackItem = items.find((it) => it.id === entry.y);
+  const label = entry.name || fallbackItem?.name || '—';
+  if (heading) heading.innerHTML = `${formatHistoryDate(view)} · <span class="muted">Feedback: ${label}</span>`;
+  forecast.innerHTML = renderHistoricalSummary(entry);
+  card.classList.add('history-view');
+  card.dataset.viewDate = view;
+  const selectedId = fallbackItem ? fallbackItem.id : (items[0]?.id || null);
+  state.feedbackDay = view;
+  state.feedbackChoice = selectedId;
+  renderFeedbackOptions(items, selectedId);
+}
+
+function shiftViewDate(step){
+  const dates = getAvailableDates();
+  if (!dates.length) return;
+  const current = state.viewDate || todayKey();
+  let idx = dates.indexOf(current);
+  if (idx === -1) idx = 0;
+  const next = idx + step;
+  if (next < 0) {
+    showToast('Du bist bereits beim neuesten Tag.', 'info', 1800);
+    return;
+  }
+  if (next >= dates.length) {
+    showToast('Keine älteren Daten verfügbar.', 'info', 1800);
+    return;
+  }
+  updateViewForDate(dates[next]);
+}
+
+function setupSwipeNavigation(){
+  const card = document.getElementById('today');
+  if (!card || card._swipeInit) return;
+  let startX = 0;
+  let startY = 0;
+  let tracking = false;
+  const onStart = (x, y) => {
+    startX = x;
+    startY = y;
+    tracking = true;
+  };
+  const onEnd = (x, y) => {
+    if (!tracking) return;
+    tracking = false;
+    const dx = x - startX;
+    const dy = y - startY;
+    if (Math.abs(dx) < 45 || Math.abs(dy) > 40) return;
+    if (dx < 0) shiftViewDate(+1); else shiftViewDate(-1);
+  };
+  card.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    onStart(t.clientX, t.clientY);
+  }, { passive: true });
+  card.addEventListener('touchend', (e) => {
+    if (!e.changedTouches || !e.changedTouches.length) return;
+    const t = e.changedTouches[0];
+    onEnd(t.clientX, t.clientY);
+  });
+  card.addEventListener('touchcancel', () => { tracking = false; });
+  card.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') return;
+    onStart(e.clientX, e.clientY);
+  });
+  card.addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'touch') return;
+    onEnd(e.clientX, e.clientY);
+  });
+  card.addEventListener('pointercancel', () => { tracking = false; });
+  card._swipeInit = true;
+}
+
 function handleFeedbackSelection(labelId, ensureVisible=true){
   if (!labelId) return;
+  const viewDate = state.viewDate || todayKey();
+  const todayIso = todayKey();
+  const prevChoice = state.feedbackChoice;
   state.feedbackChoice = labelId;
-  state.feedbackDay = new Date().toISOString().slice(0,10);
+  state.feedbackDay = viewDate;
   updateFeedbackChips(labelId, ensureVisible);
-  recordFeedback(labelId);
+  if (viewDate === todayIso) {
+    recordFeedback(labelId);
+    updateViewForDate(viewDate);
+  } else {
+    const ok = recordFeedbackForDate(viewDate, labelId);
+    if (!ok) {
+      state.feedbackChoice = prevChoice;
+      updateViewForDate(viewDate);
+    } else {
+      updateViewForDate(viewDate);
+    }
+  }
 }
 
 function recordFeedback(labelId){
   if (!state.lastData || !state.ctx) return;
   const feat = toVector(state.ctx.fToday);
-  const todayKey = new Date().toISOString().slice(0,10);
+  const todayKeyIso = todayKey();
+  const item = state.items.find(it => it.id === labelId);
   const sample = {
-    date: todayKey,
+    date: todayKeyIso,
     x: feat,
     y: labelId,
     name: item?.name || null,
     warmth: item?.warmth ?? null,
   };
   const ds = loadDataset();
-  const idx = ds.findIndex(s => s.date === todayKey);
+  const idx = ds.findIndex(s => s.date === todayKeyIso);
   if (idx >= 0) ds[idx] = sample; else ds.push(sample);
   saveDataset(ds);
-  const item = state.items.find(it => it.id === labelId);
   const isReco = labelId === state.recoTodayId;
   const name = item?.name || 'Auswahl';
   showToast(isReco ? 'Danke! Empfehlung passt.' : `Feedback gespeichert: ${name}.`, 'ok', 2200);
   checkAutoRetrain();
+}
+
+function recordFeedbackForDate(dateIso, labelId){
+  if (!dateIso) return false;
+  const ds = loadDataset();
+  const idx = ds.findIndex(s => s.date === dateIso);
+  if (idx < 0) {
+    showToast('Für diesen Tag liegen keine Daten vor.', 'warn', 2400);
+    return false;
+  }
+  const item = state.items.find(it => it.id === labelId);
+  if (!item) {
+    showToast('Unbekannte Kategorie.', 'warn', 2200);
+    return false;
+  }
+  const prev = ds[idx];
+  ds[idx] = { ...prev, y: labelId, name: item.name, warmth: item.warmth };
+  saveDataset(ds);
+  const name = item.name || 'Auswahl';
+  showToast(`Feedback aktualisiert: ${name}.`, 'ok', 2200);
+  checkAutoRetrain();
+  return true;
 }
 
 function setupFeedback() {
@@ -846,6 +1092,7 @@ async function init(force = false) {
 
 renderItems();
 setupFeedback();
+setupSwipeNavigation();
 setupLocationUI();
 loadModelIfAny().finally(()=>init());
 setupSWUpdateWatch();

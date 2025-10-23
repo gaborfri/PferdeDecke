@@ -54,6 +54,7 @@
           <button id="menu-settings" role="menuitem">Einstellungen</button>
           <button id="menu-export" role="menuitem">Backup exportieren</button>
           <button id="menu-import" role="menuitem">Backup importieren…</button>
+          <button id="menu-feedback-log" role="menuitem">Feedback-Verlauf</button>
           <button id="menu-info" role="menuitem">Info</button>
         </div>
       </div>
@@ -108,10 +109,20 @@
               <button id="add-item">+ Kategorie</button>
               <button id="reset-items" title="Standard wiederherstellen">Zurücksetzen</button>
             </div>
-            <div style="margin-top:8px">
-              <label><input type="checkbox" id="sensitive" /> Ich friere leicht</label>
-            </div>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="feedback-log" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-log-title">
+      <div class="panel" style="max-width: 720px">
+        <div class="panel-header">
+          <h2 id="feedback-log-title">Feedback-Verlauf</h2>
+          <button id="btn-feedback-log-close" class="icon" aria-label="Schließen">×</button>
+        </div>
+        <div class="panel-content">
+          <p class="muted">Zeigt die gespeicherten Feedback-Tage (neueste zuerst). Daten bleiben nur lokal auf diesem Gerät.</p>
+          <div id="feedback-log-list" class="feedback-log-list"></div>
         </div>
       </div>
     </div>

@@ -269,6 +269,14 @@ button { cursor: pointer; }
 .history-note { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
 .history-hint { font-size: 12px; color: var(--muted); margin: 0; font-style: italic; }
 .history-view .chip-scroll { margin-top: 6px; }
+.feedback-log-list { display: grid; gap: 12px; max-height: 60vh; overflow-y: auto; padding-right: 4px; }
+.feedback-log-entry { background: #161b22; border: 1px solid #263042; border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
+.feedback-log-entry header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.feedback-log-entry header strong { font-size: 16px; }
+.feedback-log-entry .log-pill { background: #1f2636; border: 1px solid #2c3a52; border-radius: 999px; padding: 4px 10px; font-weight: 600; font-size: 13px; color: var(--fg); display: inline-flex; align-items: center; gap: 6px; }
+.feedback-log-entry .log-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.feedback-empty { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+
 .icon-w { display: inline-block; width: 1em; text-align: center; transform-origin: 50% 50%; }
 
 /* Let rain metric span full row on narrow screens to avoid wrapping its content */

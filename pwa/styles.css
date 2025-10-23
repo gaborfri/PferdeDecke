@@ -263,6 +263,12 @@ button { cursor: pointer; }
 .metric { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #1c2230; border: 1px solid #2c3a52; border-radius: 10px; min-width: 0; }
 .metric .val { font-weight: 700; }
 .metric .nowrap { white-space: nowrap; }
+.history-view .metrics { margin-top: 0; }
+.history-summary { display: grid; gap: 8px; }
+.history-metrics { gap: 6px; }
+.history-note { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
+.history-hint { font-size: 12px; color: var(--muted); margin: 0; font-style: italic; }
+.history-view .chip-scroll { margin-top: 6px; }
 .icon-w { display: inline-block; width: 1em; text-align: center; transform-origin: 50% 50%; }
 
 /* Let rain metric span full row on narrow screens to avoid wrapping its content */

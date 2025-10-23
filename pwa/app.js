@@ -97,7 +97,6 @@ function saveItems(items){ localStorage.setItem("clothing_items", JSON.stringify
 const DEFAULT_LOC = { lat: 52.37424617149301, lon: 10.436978270056711, name: "Gut Warxbüttel" };
 
 const state = {
-  sensitivity: Number(localStorage.getItem("sensitivity")) || 0,
   items: loadItems(),
   timeMode: localStorage.getItem("time_mode") === "night" ? "night" : "day",
   // location settings
@@ -118,13 +117,6 @@ const state = {
 };
 
 // ---------- UI Binds ----------
-$("#sensitive").checked = state.sensitivity > 0;
-$("#sensitive").addEventListener("change", (e) => {
-  state.sensitivity = e.target.checked ? 2 : 0; // 2°C empfindlicher
-  localStorage.setItem("sensitivity", String(state.sensitivity));
-  if (state.lastData) refreshDerived();
-});
-
 // day/night selector
 $("#time-mode").value = state.timeMode;
 $("#time-mode").addEventListener("change", (e)=>{
@@ -147,6 +139,7 @@ menuOverlay?.addEventListener('click', (e) => {
 });
 // Menu actions
 document.getElementById('menu-settings')?.addEventListener('click', ()=>{ hideMenu(); openSettings(); });
+document.getElementById('menu-feedback-log')?.addEventListener('click', ()=>{ hideMenu(); openFeedbackLog(); });
 document.getElementById('menu-info')?.addEventListener('click', ()=>{ hideMenu(); openInfo(); });
 document.getElementById('menu-export')?.addEventListener('click', ()=>{ hideMenu(); exportBackup(); });
 document.getElementById('menu-import')?.addEventListener('click', ()=>{ hideMenu(); importBackup(); });
@@ -400,7 +393,7 @@ function forecastDetailsHTML(data, idx, f, dayOffset){
 
   const spark = makeSparkline(data, dayStr);
   // Temperature chip
-  const tFeel = f.temp + state.sensitivity;
+  const tFeel = f.temp;
   const tAir = f.tAir ?? f.temp;
   const showBothTemps = Math.abs(tAir - tFeel) >= 1;
   const chipTemp = `<div class="metric">🌡️ <div class="nowrap"><span class="val">${fmt(tFeel, "°C")}</span>${showBothTemps ? ` • Luft ${fmt(tAir, "°C")}` : ""}</div></div>`;
@@ -511,6 +504,52 @@ function renderHistoricalSummary(entry){
       <p class="history-hint">Hinweis: Nach links oder rechts wischen, um Tage zu wechseln.</p>
     </div>
   `;
+}
+
+function renderFeedbackLog(){
+  const list = document.getElementById('feedback-log-list');
+  if (!list) return;
+  const ds = loadDataset();
+  if (!Array.isArray(ds) || !ds.length) {
+    list.innerHTML = '<p class="feedback-empty">Bisher wurde kein Feedback gespeichert.</p>';
+    return;
+  }
+  const sorted = ds.slice().sort((a, b) => {
+    const aa = a?.date || '';
+    const bb = b?.date || '';
+    return bb.localeCompare(aa);
+  });
+  const limit = 60;
+  const items = state.items || [];
+  const idMap = new Map(items.map((it) => [it.id, it]));
+  const rows = sorted.slice(0, limit).map((entry, idx) => {
+    const dateIso = entry?.date || '';
+    const labelDate = dateIso ? formatHistoryDate(dateIso) : `Eintrag ${idx + 1}`;
+    const item = idMap.get(entry?.y) || null;
+    const name = entry?.name || item?.name || '—';
+    const warmth = Number.isFinite(entry?.warmth) ? entry.warmth : (item?.warmth ?? null);
+    const warmthText = warmth !== null ? ` · ${warmth}` : '';
+    const ctx = Array.isArray(entry?.x) ? vectorToContext(entry.x) : null;
+    const pills = [];
+    if (ctx) {
+      if (Number.isFinite(ctx.temp)) pills.push(`<span class="log-pill">🌡️ ${Math.round(ctx.temp)}°C gefühlt</span>`);
+      if (Number.isFinite(ctx.wind)) pills.push(`<span class="log-pill">💨 ${Math.round(ctx.wind * 3.6)} km/h</span>`);
+      if (Number.isFinite(ctx.pprob)) pills.push(`<span class="log-pill">☔️ ${Math.round((ctx.pprob || 0) * 100)}%</span>`);
+      if (Number.isFinite(ctx.uv) && ctx.uv >= 0.5) pills.push(`<span class="log-pill">☀️ UV ${Math.round(ctx.uv)}</span>`);
+    }
+    if (!pills.length) pills.push('<span class="log-pill">Keine Wetterdetails gespeichert</span>');
+    return `
+      <article class="feedback-log-entry">
+        <header>
+          <strong>${labelDate}</strong>
+          <span class="log-pill">🧥 ${name}${warmthText}</span>
+        </header>
+        <div class="log-pills">${pills.join('')}</div>
+      </article>
+    `;
+  }).join('');
+  const extra = sorted.length > limit ? `<p class="feedback-empty">Weitere ${sorted.length - limit} Einträge sind gespeichert.</p>` : '';
+  list.innerHTML = rows + extra;
 }
 
 function getAvailableDates(){
@@ -830,7 +869,6 @@ async function exportBackup(){
       version: 1,
       exportedAt: new Date().toISOString(),
       settings: {
-        sensitivity: state.sensitivity,
         time_mode: state.timeMode,
         loc_mode: state.locMode,
         manual_lat: state.manualLat,
@@ -869,7 +907,6 @@ function importBackup(){
       if (!obj || obj.type !== 'pferdedecke-backup') throw new Error('Unerwartetes Format');
       // Restore settings
       const s = obj.settings || {};
-      if ('sensitivity' in s) { state.sensitivity = Number(s.sensitivity)||0; localStorage.setItem('sensitivity', String(state.sensitivity)); $("#sensitive").checked = state.sensitivity>0; }
       if (s.time_mode){ state.timeMode = (s.time_mode==='night'?'night':'day'); localStorage.setItem('time_mode', state.timeMode); $("#time-mode").value = state.timeMode; }
       if (s.loc_mode){ state.locMode = (s.loc_mode==='manual'?'manual':'auto'); localStorage.setItem('loc_mode', state.locMode); }
       if (Number.isFinite(s.manual_lat)) { state.manualLat = Number(s.manual_lat); localStorage.setItem('manual_lat', String(state.manualLat)); }
@@ -956,7 +993,7 @@ function selectItem(feat, items){
       if (found) return found;
     } catch (e) { console.warn("ML predict failed, fallback rules", e); }
   }
-  return recommendRule(feat.temp, feat.wind, feat.pprob, feat.isRain, state.sensitivity, items);
+  return recommendRule(feat.temp, feat.wind, feat.pprob, feat.isRain, 0, items);
 }
 
 function normalizeVec(x, mean, std){ return x.map((v,i)=> std[i] ? (v-mean[i])/std[i] : v); }
@@ -1340,9 +1377,28 @@ document.getElementById('btn-settings-close')?.addEventListener('click', closeSe
 document.getElementById('settings')?.addEventListener('click', (e)=>{
   if (e.target && e.target.id === 'settings') closeSettings();
 });
+
+// ---------- Feedback Log Overlay ----------
+function openFeedbackLog(){
+  renderFeedbackLog();
+  document.getElementById('feedback-log')?.classList.remove('hidden');
+}
+function closeFeedbackLog(){
+  document.getElementById('feedback-log')?.classList.add('hidden');
+}
+document.getElementById('btn-feedback-log-close')?.addEventListener('click', closeFeedbackLog);
+document.getElementById('feedback-log')?.addEventListener('click', (e)=>{
+  if (e.target && e.target.id === 'feedback-log') closeFeedbackLog();
+});
+
 // Close on Escape
 window.addEventListener('keydown', (e)=>{
-  if (e.key === 'Escape') { closeSettings(); hideMenu(); }
+  if (e.key === 'Escape') {
+    closeFeedbackLog();
+    closeSettings();
+    closeInfo();
+    hideMenu();
+  }
 });
 
 // ---------- Info Overlay ----------

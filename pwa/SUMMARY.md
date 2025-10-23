@@ -6,7 +6,6 @@ Funktionen
 - Wetterdaten (stündlich+täglich): gefühlte/Luft‑Temperatur, Luftfeuchte, Wind/Böen/Richtung, Niederschlagswahrscheinlichkeit/-menge, Regenstunden, UV, Wettercode, Sonnenauf-/untergang.
 - Empfehlungen heute/morgen, Zeitpunkt konfigurierbar: Tag (12:00/08:00) oder Nacht (22:00/22:00).
 - Konfigurierbare Kleidungskategorien: beliebige Anzahl, Name, Wärmegrad (0–100), „wasserdicht“.
-- Sensitivität „ich friere leicht“ (+2 °C auf die gefühlte Temperatur).
 - Tägliches Feedback („Was wäre passender gewesen?“) – ein Eintrag pro Tag.
 - Optionales on‑device ML: Training mit TF.js; Modell in `localStorage`, Umschalter „ML nutzen“. TF.js ist lokal gebundled und wird offline gecached.
 - Offline‑fähig via Service Worker (nach erstem Laden; auf iPhone nur mit HTTPS‑Hosting).

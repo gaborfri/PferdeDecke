@@ -1,4 +1,4 @@
-const CACHE = "pferdedecke-v15"; // relative paths for GitHub Pages project sites
+const CACHE = "pferdedecke-v16"; // relative paths for GitHub Pages project sites
 const ASSETS = [
   "./",
   "./index.html",

@@ -605,7 +605,7 @@ function setupSwipeNavigation(){
     const dx = x - startX;
     const dy = y - startY;
     if (Math.abs(dx) < 45 || Math.abs(dy) > 40) return;
-    if (dx < 0) shiftViewDate(+1); else shiftViewDate(-1);
+    if (dx > 0) shiftViewDate(+1); else shiftViewDate(-1);
   };
   card.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;

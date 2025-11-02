@@ -15,6 +15,7 @@ function showToast(message, variant = 'info', duration = 3000) {
   } catch {}
 }
 const fmt = (n, unit) => `${Math.round(n)}${unit}`;
+const APP_VERSION = "pferdedecke-v17"; // in sync with sw.js CACHE key
 
 const dateFmt = new Intl.DateTimeFormat('de-DE', {
   weekday: 'short',
@@ -1402,7 +1403,11 @@ window.addEventListener('keydown', (e)=>{
 });
 
 // ---------- Info Overlay ----------
-function openInfo(){ document.getElementById('info')?.classList.remove('hidden'); }
+function openInfo(){
+  const ver = document.getElementById('app-version');
+  if (ver) ver.textContent = APP_VERSION;
+  document.getElementById('info')?.classList.remove('hidden');
+}
 function closeInfo(){ document.getElementById('info')?.classList.add('hidden'); }
 document.getElementById('btn-info-close')?.addEventListener('click', closeInfo);
 document.getElementById('info')?.addEventListener('click', (e)=>{ if (e.target && e.target.id === 'info') closeInfo(); });

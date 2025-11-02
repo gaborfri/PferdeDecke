@@ -15,7 +15,7 @@ function showToast(message, variant = 'info', duration = 3000) {
   } catch {}
 }
 const fmt = (n, unit) => `${Math.round(n)}${unit}`;
-const APP_VERSION = "pferdedecke-v16"; // in sync with sw.js CACHE key
+const APP_VERSION = "pferdedecke-v17"; // in sync with sw.js CACHE key
 
 const dateFmt = new Intl.DateTimeFormat('de-DE', {
   weekday: 'short',
